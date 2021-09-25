@@ -7,13 +7,15 @@ import (
 	"github.com/rs/zerolog/log"
 	"go.dedis.ch/cs438/peer"
 	"go.dedis.ch/cs438/transport"
+	"go.dedis.ch/cs438/types"
 )
 
 // NewPeer creates a new peer. You can change the content and location of this
 // function but you MUST NOT change its signature and package location.
 func NewPeer(conf peer.Configuration) peer.Peer {
-	// here you must return a struct that implements the peer.Peer functions.
-	// Therefore, you are free to rename and change it as you want.
+	// register the callback for chatmessages
+	conf.MessageRegistry.RegisterMessageCallback(types.ChatMessage{Message: ""}, handle_chatmessage)
+
 	return &node{
 		conf:        conf,
 		isStarted:   false,
@@ -39,39 +41,58 @@ type node struct {
 	stopSignal chan struct{}
 }
 
+// the listening routine
+// waits for incoming packets and handles them
+// if a message is received on the stopSignal channel, the execution stops after at most the given timeout
+// writes an error
+func listen(n node, timeout time.Duration) {
+	for {
+		pkt, err := n.conf.Socket.Recv(timeout)
+		if err != nil && !errors.Is(err, transport.TimeoutErr(0)) {
+			// there is an actual error
+			log.Error().Err(err).Msg("")
+			n.returnValue <- err
+			return
+		}
+
+		select {
+		case <-n.stopSignal:
+			// we received a signal to stop listening
+			log.Info().Msg("message received to stop listening")
+			n.returnValue <- nil
+			return
+		default:
+		}
+
+		if errors.Is(err, transport.TimeoutErr(0)) {
+			continue
+		}
+
+		err = handle_packet(n, pkt)
+		if err != nil {
+			log.Error().Err(err).Msg("")
+			n.returnValue <- err
+			return
+		}
+	}
+}
+
 // Start implements peer.Service
 // It returns an error if the service is already started.
 func (n *node) Start() error {
 	log.Info().Msg("start the service")
 
+	if n == nil {
+		return errors.New("the given node isn't initialized")
+	}
+
 	if n.isStarted {
-		err := errors.New("the service is already started")
-		log.Error().Err(err).Msg("")
-		return err
+		return errors.New("the service is already started")
 	}
 
 	n.isStarted = true
 
-	go func(returnValue chan error, stopSignal chan struct{}) {
-		for {
-			_, err := n.conf.Socket.Recv(time.Second * 1)
-			if err != nil && !errors.Is(err, transport.TimeoutErr(0)) {
-				// there is an actual error
-				returnValue <- err
-				return
-			}
-
-			select {
-			case <-stopSignal:
-				// we received a signal to stop listening
-				returnValue <- nil
-				return
-			default:
-			}
-
-			//TODO handle packets
-		}
-	}(n.returnValue, n.stopSignal)
+	go listen(*n, time.Second*1)
 
 	return nil
 }
@@ -82,10 +103,12 @@ func (n *node) Start() error {
 func (n *node) Stop() error {
 	log.Info().Msg("stop the service")
 
+	if n == nil {
+		return errors.New("the given node isn't initialized")
+	}
+
 	if !n.isStarted {
-		err := errors.New("the service is already stopped")
-		log.Error().Err(err).Msg("")
-		return err
+		return errors.New("the service is already stopped")
 	}
 
 	n.stopSignal <- struct{}{}

@@ -22,7 +22,9 @@ type UDP struct {
 
 // CreateSocket implements transport.Transport
 func (n *UDP) CreateSocket(address string) (transport.ClosableSocket, error) {
-	log.Info().Str("address", address).Msg("create socket")
+	log.Info().
+		Str("address", address).
+		Msg("create socket")
 	panic("to be implemented in HW0")
 }
 
@@ -55,7 +57,9 @@ func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) 
 // the timeout is reached. In the case the timeout is reached, return a
 // TimeoutErr.
 func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
-	log.Info().Int64("timeout (ms)", timeout.Milliseconds()).Msg("receive packet")
+	log.Info().
+		Int64("timeout (ms)", timeout.Milliseconds()).
+		Msg("receive packet")
 	panic("to be implemented in HW0")
 }
 
