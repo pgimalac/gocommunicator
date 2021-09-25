@@ -2,6 +2,7 @@ package impl
 
 import (
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -17,10 +18,11 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 	conf.MessageRegistry.RegisterMessageCallback(types.ChatMessage{Message: ""}, handle_chatmessage)
 
 	return &node{
-		conf:        conf,
-		isStarted:   false,
-		returnValue: make(chan error),
-		stopSignal:  make(chan struct{}),
+		conf:         conf,
+		isStarted:    false,
+		returnValue:  make(chan error),
+		stopSignal:   make(chan struct{}),
+		routingTable: make(map[string]string),
 	}
 }
 
@@ -39,13 +41,17 @@ type node struct {
 
 	// a channel used to send a stop signal to the listening routine
 	stopSignal chan struct{}
+
+	routingTable map[string]string
+
+	sync sync.Mutex
 }
 
 // the listening routine
 // waits for incoming packets and handles them
 // if a message is received on the stopSignal channel, the execution stops after at most the given timeout
 // writes an error
-func listen(n node, timeout time.Duration) {
+func listen(n *node, timeout time.Duration) {
 	for {
 		pkt, err := n.conf.Socket.Recv(timeout)
 		if err != nil && !errors.Is(err, transport.TimeoutErr(0)) {
@@ -92,7 +98,7 @@ func (n *node) Start() error {
 
 	n.isStarted = true
 
-	go listen(*n, time.Second*1)
+	go listen(n, time.Second*1)
 
 	return nil
 }
@@ -132,21 +138,35 @@ func (n *node) Unicast(dest string, msg transport.Message) error {
 		Str("type", msg.Type).
 		Bytes("payload", msg.Payload).
 		Msg("send unicast message")
+
 	panic("to be implemented in HW0")
 }
 
 // AddPeer implements peer.Service
 func (n *node) AddPeer(addr ...string) {
+	n.sync.Lock()
+	defer n.sync.Unlock()
+
 	for _, peer := range addr {
 		log.Info().Str("address", peer).Msg("add peer")
+		n.SetRoutingEntry(peer, peer) // no relay ?
 	}
-	panic("to be implemented in HW0")
 }
 
 // GetRoutingTable implements peer.Service
 func (n *node) GetRoutingTable() peer.RoutingTable {
 	log.Info().Msg("get routing table")
-	panic("to be implemented in HW0")
+
+	copiedMap := make(map[string]string)
+
+	n.sync.Lock()
+	defer n.sync.Unlock()
+
+	for k, v := range n.routingTable {
+		copiedMap[k] = v
+	}
+
+	return copiedMap
 }
 
 // SetRoutingEntry implements peer.Service
@@ -155,5 +175,13 @@ func (n *node) SetRoutingEntry(origin, relayAddr string) {
 		Str("origin", origin).
 		Str("relay address", relayAddr).
 		Msg("set routing entry")
-	panic("to be implemented in HW0")
+
+	n.sync.Lock()
+	defer n.sync.Unlock()
+
+	if relayAddr == "" {
+		delete(n.routingTable, origin)
+	} else {
+		n.routingTable[origin] = relayAddr
+	}
 }
