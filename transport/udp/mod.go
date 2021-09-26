@@ -23,7 +23,7 @@ type UDP struct {
 
 // CreateSocket implements transport.Transport
 func (*UDP) CreateSocket(address string) (transport.ClosableSocket, error) {
-	log.Info().
+	log.Debug().
 		Str("address", address).
 		Msg("create socket")
 
@@ -59,7 +59,7 @@ func (s *Socket) Close() error {
 
 // Send implements transport.Socket
 func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) error {
-	log.Info().
+	log.Debug().
 		Str("destination", dest).
 		Str("header", pkt.Header.String()).
 		Str("message type", pkt.Msg.Type).
@@ -71,9 +71,13 @@ func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) 
 	//TODO maybe add to the list only if it was sent successfully ? not sure
 	s.outs = append(s.outs, pkt)
 
-	//TODO
-	//deadline := time.Now().Add(timeout)
-	//err = pc.SetWriteDeadline(deadline)
+	deadline := time.Now().Add(timeout)
+	err := s.sock.SetWriteDeadline(deadline)
+	if err != nil {
+		return err
+	}
+
+	//TODO send
 
 	panic("to be implemented in HW0")
 }
@@ -82,41 +86,60 @@ func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) 
 // the timeout is reached. In the case the timeout is reached, return a
 // TimeoutErr.
 func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
-	log.Info().
+	log.Debug().
 		Int64("timeout (ms)", timeout.Milliseconds()).
-		Msg("receive packet")
+		Msg("Recv call")
 
-	//TODO
-	//deadline := time.Now().Add(timeout)
-	//err = pc.SetReadDeadline(deadline)
+	deadline := time.Now().Add(timeout)
+	err := s.sock.SetReadDeadline(deadline)
+	if err != nil {
+		return transport.Packet{}, err
+	}
 
-	//TODO receive the packet
+	buffer := make([]byte, bufSize)
+	var size int
+	var addr net.Addr
+	size, addr, err = s.sock.ReadFrom(buffer)
+	if err != nil {
+		return transport.Packet{}, err
+	}
 
-	//TODO once the packet is received, add it to the list of received packets
-	//s.ins = append(s.transport.ins, pkt)
+	var packet transport.Packet
+	err = packet.Unmarshal(buffer)
+	if err != nil {
+		return transport.Packet{}, err
+	}
 
-	panic("to be implemented in HW0")
+	log.Info().
+		Str("address", addr.String()).
+		Int("size", size).
+		Bytes("content", buffer).
+		Msg("packet received")
+
+	s.ins = append(s.ins, packet)
+
+	return packet, nil
 }
 
 // GetAddress implements transport.Socket. It returns the address assigned. Can
 // be useful in the case one provided a :0 address, which makes the system use a
 // random free port.
 func (s *Socket) GetAddress() string {
-	log.Info().Msg("get address")
+	log.Debug().Msg("get address")
 
 	return s.sock.LocalAddr().String() // or RemoteAddr ?
 }
 
 // GetIns implements transport.Socket
 func (s *Socket) GetIns() []transport.Packet {
-	log.Info().Msg("get received message")
+	log.Debug().Msg("get received messages")
 
 	return s.ins
 }
 
 // GetOuts implements transport.Socket
 func (s *Socket) GetOuts() []transport.Packet {
-	log.Info().Msg("get sent messages")
+	log.Debug().Msg("get sent messages")
 
 	return s.outs
 }

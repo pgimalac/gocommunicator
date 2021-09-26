@@ -180,7 +180,7 @@ func (n *node) AddPeer(addr ...string) {
 
 // GetRoutingTable implements peer.Service
 func (n *node) GetRoutingTable() peer.RoutingTable {
-	log.Info().Msg("get routing table")
+	log.Debug().Msg("get routing table")
 
 	copiedMap := make(map[string]string)
 
@@ -196,7 +196,7 @@ func (n *node) GetRoutingTable() peer.RoutingTable {
 
 // SetRoutingEntry implements peer.Service
 func (n *node) SetRoutingEntry(origin, relayAddr string) {
-	log.Info().
+	log.Debug().
 		Str("origin", origin).
 		Str("relay address", relayAddr).
 		Msg("set routing entry")
