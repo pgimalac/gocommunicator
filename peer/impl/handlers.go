@@ -15,12 +15,12 @@ func handle_packet(n *node, pkt transport.Packet) error {
 		Bytes("payload", pkt.Msg.Payload).
 		Msg("packet received")
 
-	if pkt.Header.Destination == n.conf.Socket.GetAddress() {
+	if pkt.Header.Destination == n.GetAddress() {
 		return n.conf.MessageRegistry.ProcessPacket(pkt)
 	}
 
-	pkt.Header.RelayedBy = n.conf.Socket.GetAddress()
-	return n.conf.Socket.Send(pkt.Header.Destination, pkt, 0) // give specific timeout ?
+	pkt.Header.RelayedBy = n.GetAddress()
+	return n.conf.Socket.Send(pkt.Header.Destination, pkt, 0) // for now we don't care about the timeout
 }
 
 func handle_chatmessage(msg types.Message, pkt transport.Packet) error {

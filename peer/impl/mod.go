@@ -23,7 +23,7 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 		isStarted:    false,
 		returnValue:  make(chan error),
 		stopSignal:   make(chan struct{}),
-		routingTable: make(map[string]string),
+		routingTable: make(peer.RoutingTable),
 	}
 }
 
@@ -43,7 +43,7 @@ type node struct {
 	// a channel used to send a stop signal to the listening routine
 	stopSignal chan struct{}
 
-	routingTable map[string]string
+	routingTable peer.RoutingTable
 
 	sync sync.Mutex
 }

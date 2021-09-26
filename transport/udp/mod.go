@@ -1,6 +1,7 @@
 package udp
 
 import (
+	"net"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -21,11 +22,22 @@ type UDP struct {
 }
 
 // CreateSocket implements transport.Transport
-func (n *UDP) CreateSocket(address string) (transport.ClosableSocket, error) {
+func (*UDP) CreateSocket(address string) (transport.ClosableSocket, error) {
 	log.Info().
 		Str("address", address).
 		Msg("create socket")
-	panic("to be implemented in HW0")
+
+	sock, err := net.ListenPacket("udp", address)
+	if err != nil {
+		return nil, err
+	}
+
+	socket := Socket{
+		sock: sock,
+		ins:  make([]transport.Packet, 0),
+		outs: make([]transport.Packet, 0),
+	}
+	return &socket, nil
 }
 
 // Socket implements a network socket using UDP.
@@ -33,12 +45,16 @@ func (n *UDP) CreateSocket(address string) (transport.ClosableSocket, error) {
 // - implements transport.Socket
 // - implements transport.ClosableSocket
 type Socket struct {
+	sock net.PacketConn
+	ins  []transport.Packet
+	outs []transport.Packet
 }
 
 // Close implements transport.Socket. It returns an error if already closed.
 func (s *Socket) Close() error {
 	log.Info().Msg("close socket")
-	panic("to be implemented in HW0")
+
+	return s.sock.Close()
 }
 
 // Send implements transport.Socket
@@ -50,6 +66,15 @@ func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) 
 		Bytes("payload", pkt.Msg.Payload).
 		Int64("timeout (ms)", timeout.Milliseconds()).
 		Msg("send packet")
+
+	// add the packet we want to send to the list of sent packets
+	//TODO maybe add to the list only if it was sent successfully ? not sure
+	s.outs = append(s.outs, pkt)
+
+	//TODO
+	//deadline := time.Now().Add(timeout)
+	//err = pc.SetWriteDeadline(deadline)
+
 	panic("to be implemented in HW0")
 }
 
@@ -60,6 +85,16 @@ func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
 	log.Info().
 		Int64("timeout (ms)", timeout.Milliseconds()).
 		Msg("receive packet")
+
+	//TODO
+	//deadline := time.Now().Add(timeout)
+	//err = pc.SetReadDeadline(deadline)
+
+	//TODO receive the packet
+
+	//TODO once the packet is received, add it to the list of received packets
+	//s.ins = append(s.transport.ins, pkt)
+
 	panic("to be implemented in HW0")
 }
 
@@ -68,17 +103,20 @@ func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
 // random free port.
 func (s *Socket) GetAddress() string {
 	log.Info().Msg("get address")
-	panic("to be implemented in HW0")
+
+	return s.sock.LocalAddr().String() // or RemoteAddr ?
 }
 
 // GetIns implements transport.Socket
 func (s *Socket) GetIns() []transport.Packet {
 	log.Info().Msg("get received message")
-	panic("to be implemented in HW0")
+
+	return s.ins
 }
 
 // GetOuts implements transport.Socket
 func (s *Socket) GetOuts() []transport.Packet {
 	log.Info().Msg("get sent messages")
-	panic("to be implemented in HW0")
+
+	return s.outs
 }
