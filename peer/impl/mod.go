@@ -2,6 +2,7 @@ package impl
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -131,6 +132,18 @@ func (n *node) Stop() error {
 	return err
 }
 
+func (n *node) GetAddress() string {
+	return n.conf.Socket.GetAddress()
+}
+
+func (n *node) GetRelay(dest string) (string, bool) {
+	n.sync.Lock()
+	defer n.sync.Unlock()
+
+	value, exists := n.routingTable[dest]
+	return value, exists
+}
+
 // Unicast implements peer.Messaging
 func (n *node) Unicast(dest string, msg transport.Message) error {
 	log.Info().
@@ -139,7 +152,19 @@ func (n *node) Unicast(dest string, msg transport.Message) error {
 		Bytes("payload", msg.Payload).
 		Msg("send unicast message")
 
-	panic("to be implemented in HW0")
+	relay, exists := n.GetRelay(dest)
+	if !exists {
+		return fmt.Errorf("there is no relay for the address %s", dest)
+	}
+
+	header := transport.NewHeader(n.GetAddress(), relay, dest, 0) // don't care about ttl for now
+
+	pkt := transport.Packet{
+		Header: &header,
+		Msg:    &msg,
+	}
+
+	return n.conf.Socket.Send(dest, pkt, 0) // for now we don't care about the timeout
 }
 
 // AddPeer implements peer.Service
