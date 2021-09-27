@@ -59,7 +59,7 @@ type Socket struct {
 
 // Close implements transport.Socket. It returns an error if already closed.
 func (s *Socket) Close() error {
-	log.Info().Msg("close socket")
+	log.Info().Str("address", s.GetAddress()).Msg("close socket")
 
 	return s.sock.Close()
 }
@@ -67,6 +67,7 @@ func (s *Socket) Close() error {
 // Send implements transport.Socket
 func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) error {
 	log.Debug().
+		Str("by", s.GetAddress()).
 		Str("destination", dest).
 		Str("header", pkt.Header.String()).
 		Str("message type", pkt.Msg.Type).
@@ -110,7 +111,11 @@ func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) 
 	//TODO not sure if we only add the packet if it was successfully sent or not
 	s.outs = append(s.outs, pkt)
 
-	log.Info().Int("size", size).Msg("message sent")
+	log.Info().
+		Str("by", s.GetAddress()).
+		Str("to", dest).
+		Int("size", size).
+		Msg("packet sent")
 
 	return nil
 }
@@ -120,6 +125,7 @@ func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) 
 // TimeoutErr.
 func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
 	log.Debug().
+		Str("by", s.GetAddress()).
 		Int64("timeout (ms)", timeout.Milliseconds()).
 		Msg("Recv call")
 
@@ -147,7 +153,8 @@ func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
 	}
 
 	log.Info().
-		Str("address", addr.String()).
+		Str("by", s.GetAddress()).
+		Str("from", addr.String()).
 		Int("size", size).
 		Bytes("content", buffer[:size]).
 		Msg("packet received")
@@ -163,7 +170,7 @@ func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
 // be useful in the case one provided a :0 address, which makes the system use a
 // random free port.
 func (s *Socket) GetAddress() string {
-	log.Debug().Msg("get address")
+	// log.Debug().Msg("get address")
 
 	return s.sock.LocalAddr().String() // or RemoteAddr ?
 }

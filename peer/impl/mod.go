@@ -2,6 +2,7 @@ package impl
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -150,6 +151,7 @@ func (n *node) GetRelay(dest string) (string, bool) {
 // Unicast implements peer.Messaging
 func (n *node) Unicast(dest string, msg transport.Message) error {
 	log.Info().
+		Str("by", n.GetAddress()).
 		Str("destination", dest).
 		Str("type", msg.Type).
 		Bytes("payload", msg.Payload).
@@ -157,27 +159,21 @@ func (n *node) Unicast(dest string, msg transport.Message) error {
 
 	relay, exists := n.GetRelay(dest)
 	if !exists {
-		// return fmt.Errorf("there is no relay for the address %s", dest)
-
-		//TODO what do we do when there is no relay ? return an error, or send directly on the address ?
-		relay = dest
+		return fmt.Errorf("there is no relay for the address %s", dest)
 	}
 
-	header := transport.NewHeader(n.GetAddress(), relay, dest, 0) // don't care about ttl for now
+	header := transport.NewHeader(n.GetAddress(), n.GetAddress(), dest, 0) // don't care about ttl for now
 
 	pkt := transport.Packet{
 		Header: &header,
 		Msg:    &msg,
 	}
 
-	return n.conf.Socket.Send(dest, pkt, 0) // for now we don't care about the timeout
+	return n.conf.Socket.Send(relay, pkt, 0) // for now we don't care about the timeout
 }
 
 // AddPeer implements peer.Service
 func (n *node) AddPeer(addr ...string) {
-	n.sync.Lock()
-	defer n.sync.Unlock()
-
 	for _, peer := range addr {
 		log.Info().Str("address", peer).Msg("add peer")
 		n.SetRoutingEntry(peer, peer) // no relay ?
@@ -209,6 +205,11 @@ func (n *node) SetRoutingEntry(origin, relayAddr string) {
 
 	n.sync.Lock()
 	defer n.sync.Unlock()
+
+	// we ignore our own address
+	if origin == n.GetAddress() && n.routingTable[origin] == origin {
+		return
+	}
 
 	if relayAddr == "" {
 		delete(n.routingTable, origin)

@@ -9,17 +9,20 @@ import (
 )
 
 func handle_packet(n *node, pkt transport.Packet) error {
+	addr := n.GetAddress()
+
 	log.Info().
+		Str("by", addr).
 		Str("header", pkt.Header.String()).
 		Str("message type", pkt.Msg.Type).
 		Bytes("payload", pkt.Msg.Payload).
-		Msg("packet received")
+		Msg("handle packet")
 
-	if pkt.Header.Destination == n.GetAddress() {
+	if pkt.Header.Destination == addr {
 		return n.conf.MessageRegistry.ProcessPacket(pkt)
 	}
 
-	pkt.Header.RelayedBy = n.GetAddress()
+	pkt.Header.RelayedBy = addr
 	return n.conf.Socket.Send(pkt.Header.Destination, pkt, 0) // for now we don't care about the timeout
 }
 
