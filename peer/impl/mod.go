@@ -2,7 +2,6 @@ package impl
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -18,13 +17,17 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 	// register the callback for chatmessages
 	conf.MessageRegistry.RegisterMessageCallback(types.ChatMessage{Message: ""}, handle_chatmessage)
 
-	return &node{
+	node := &node{
 		conf:         conf,
 		isStarted:    false,
 		returnValue:  make(chan error),
 		stopSignal:   make(chan struct{}),
 		routingTable: make(peer.RoutingTable),
 	}
+
+	node.AddPeer(node.GetAddress(), node.GetAddress())
+
+	return node
 }
 
 // node implements a peer to build a Peerster system
@@ -154,7 +157,10 @@ func (n *node) Unicast(dest string, msg transport.Message) error {
 
 	relay, exists := n.GetRelay(dest)
 	if !exists {
-		return fmt.Errorf("there is no relay for the address %s", dest)
+		// return fmt.Errorf("there is no relay for the address %s", dest)
+
+		//TODO what do we do when there is no relay ? return an error, or send directly on the address ?
+		relay = dest
 	}
 
 	header := transport.NewHeader(n.GetAddress(), relay, dest, 0) // don't care about ttl for now

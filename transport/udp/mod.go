@@ -1,7 +1,10 @@
 package udp
 
 import (
+	"errors"
 	"net"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -37,6 +40,9 @@ func (*UDP) CreateSocket(address string) (transport.ClosableSocket, error) {
 		ins:  make([]transport.Packet, 0),
 		outs: make([]transport.Packet, 0),
 	}
+
+	log.Info().Str("address", socket.GetAddress()).Msg("socket created")
+
 	return &socket, nil
 }
 
@@ -48,6 +54,7 @@ type Socket struct {
 	sock net.PacketConn
 	ins  []transport.Packet
 	outs []transport.Packet
+	sync sync.Mutex //TODO use different mutexes for each field ?
 }
 
 // Close implements transport.Socket. It returns an error if already closed.
@@ -67,14 +74,15 @@ func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) 
 		Int64("timeout (ms)", timeout.Milliseconds()).
 		Msg("send packet")
 
-	deadline := time.Now().Add(timeout)
-	err := s.sock.SetWriteDeadline(deadline)
-	if err != nil {
-		return err
+	if timeout != 0 {
+		deadline := time.Now().Add(timeout)
+		err := s.sock.SetWriteDeadline(deadline)
+		if err != nil {
+			return err
+		}
 	}
 
-	var buffer []byte
-	buffer, err = pkt.Marshal()
+	buffer, err := pkt.Marshal()
 	if err != nil {
 		return err
 	}
@@ -90,9 +98,14 @@ func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) 
 	var size int
 	size, err = s.sock.WriteTo(buffer, destaddr)
 	if err != nil {
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			err = transport.TimeoutErr(timeout)
+		}
 		return err
 	}
 
+	s.sync.Lock()
+	defer s.sync.Unlock()
 	// add the packet we sent to the list of sent packets
 	//TODO not sure if we only add the packet if it was successfully sent or not
 	s.outs = append(s.outs, pkt)
@@ -110,22 +123,25 @@ func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
 		Int64("timeout (ms)", timeout.Milliseconds()).
 		Msg("Recv call")
 
-	deadline := time.Now().Add(timeout)
-	err := s.sock.SetReadDeadline(deadline)
-	if err != nil {
-		return transport.Packet{}, err
+	if timeout != 0 {
+		deadline := time.Now().Add(timeout)
+		err := s.sock.SetReadDeadline(deadline)
+		if err != nil {
+			return transport.Packet{}, err
+		}
 	}
 
 	buffer := make([]byte, bufSize)
-	var size int
-	var addr net.Addr
-	size, addr, err = s.sock.ReadFrom(buffer)
+	size, addr, err := s.sock.ReadFrom(buffer)
 	if err != nil {
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			err = transport.TimeoutErr(timeout)
+		}
 		return transport.Packet{}, err
 	}
 
 	var packet transport.Packet
-	err = packet.Unmarshal(buffer)
+	err = packet.Unmarshal(buffer[:size])
 	if err != nil {
 		return transport.Packet{}, err
 	}
@@ -133,9 +149,11 @@ func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
 	log.Info().
 		Str("address", addr.String()).
 		Int("size", size).
-		Bytes("content", buffer).
+		Bytes("content", buffer[:size]).
 		Msg("packet received")
 
+	s.sync.Lock()
+	defer s.sync.Unlock()
 	s.ins = append(s.ins, packet)
 
 	return packet, nil
