@@ -67,19 +67,39 @@ func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) 
 		Int64("timeout (ms)", timeout.Milliseconds()).
 		Msg("send packet")
 
-	// add the packet we want to send to the list of sent packets
-	//TODO maybe add to the list only if it was sent successfully ? not sure
-	s.outs = append(s.outs, pkt)
-
 	deadline := time.Now().Add(timeout)
 	err := s.sock.SetWriteDeadline(deadline)
 	if err != nil {
 		return err
 	}
 
-	//TODO send
+	var buffer []byte
+	buffer, err = pkt.Marshal()
+	if err != nil {
+		return err
+	}
 
-	panic("to be implemented in HW0")
+	var destaddr *net.UDPAddr
+	destaddr, err = net.ResolveUDPAddr("udp", dest)
+	if err != nil {
+		return err
+	}
+
+	//TODO handle a too long packet by splitting it up ?
+
+	var size int
+	size, err = s.sock.WriteTo(buffer, destaddr)
+	if err != nil {
+		return err
+	}
+
+	// add the packet we sent to the list of sent packets
+	//TODO not sure if we only add the packet if it was successfully sent or not
+	s.outs = append(s.outs, pkt)
+
+	log.Info().Int("size", size).Msg("message sent")
+
+	return nil
 }
 
 // Recv implements transport.Socket. It blocks until a packet is received, or
