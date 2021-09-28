@@ -97,6 +97,9 @@ func (n *node) Start() error {
 		return errors.New("the given node isn't initialized")
 	}
 
+	n.sync.Lock()
+	defer n.sync.Unlock()
+
 	if n.isStarted {
 		return errors.New("the service is already started")
 	}
@@ -118,11 +121,18 @@ func (n *node) Stop() error {
 		return errors.New("the given node isn't initialized")
 	}
 
+	n.sync.Lock()
+
 	if !n.isStarted {
+		n.sync.Unlock()
 		return errors.New("the service is already stopped")
 	}
 
+	n.isStarted = false
 	n.stopSignal <- struct{}{}
+
+	n.sync.Unlock()
+
 	err := <-n.returnValue
 
 	if err != nil {
@@ -130,8 +140,6 @@ func (n *node) Stop() error {
 		// it did not read the stop signal that was just sent
 		<-n.stopSignal
 	}
-
-	n.isStarted = false
 
 	return err
 }
