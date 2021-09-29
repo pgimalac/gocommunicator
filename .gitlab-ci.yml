@@ -1,0 +1,16 @@
+default:
+  image: golang:1.17
+
+stages:
+  - lint
+  - test
+
+golint:
+  stage: lint
+  script:
+    - make lint
+
+gotest:
+  stage: test
+  script:
+    - make test

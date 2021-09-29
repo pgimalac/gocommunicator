@@ -1,7 +1,9 @@
 package integration
 
 import (
+	"fmt"
 	"os"
+	"runtime"
 
 	"go.dedis.ch/cs438/internal/binnode"
 	"go.dedis.ch/cs438/peer"
@@ -14,14 +16,42 @@ import (
 var studentFac peer.Factory = impl.NewPeer
 var referenceFac peer.Factory
 
-func init() {
-	path := os.Getenv("PEER_BIN_PATH")
+// a bag of supported OS
+var supportedOS = map[string]struct{}{
+	"darwin": {},
+	"linux":  {},
+}
 
-	if path == "" {
-		path = "./node"
+// a bag of supported architecture
+var supportedArch = map[string]struct{}{
+	"amd64": {},
+}
+
+func init() {
+	path := getPath()
+	referenceFac = binnode.GetBinnodeFac(path)
+}
+
+// getPath returns the path in the PEER_BIN_PATH variable if set, otherwise a
+// path of form ./node.<OS>.<ARCH>. For example "./node.darwin.amd64". It panics
+// in case of an unsupported OS/ARCH.
+func getPath() string {
+	path := os.Getenv("PEER_BIN_PATH")
+	if path != "" {
+		return path
 	}
 
-	referenceFac = binnode.GetBinnodeFac(path)
+	_, found := supportedOS[runtime.GOOS]
+	if !found {
+		panic("unsupported OS: " + runtime.GOOS)
+	}
+
+	_, found = supportedArch[runtime.GOARCH]
+	if !found {
+		panic("unsupported architecture: " + runtime.GOARCH)
+	}
+
+	return fmt.Sprintf("./node.%s.%s", runtime.GOOS, runtime.GOARCH)
 }
 
 var udpFac transport.Factory = udp.NewUDP
