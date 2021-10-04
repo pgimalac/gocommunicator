@@ -535,7 +535,7 @@ func Test_HW0_Messaging_Relaying(t *testing.T) {
 			pkt = n2Ins[0]
 
 			require.Equal(t, node3.GetAddr(), pkt.Header.Destination)
-			require.Equal(t, node2.GetAddr(), pkt.Header.RelayedBy)
+			require.Equal(t, node1.GetAddr(), pkt.Header.RelayedBy)
 			require.Equal(t, node1.GetAddr(), pkt.Header.Source)
 
 			fake.Compare(t, pkt.Msg)

@@ -165,7 +165,7 @@ func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
 
 	s.sync.Lock()
 	defer s.sync.Unlock()
-	s.ins = append(s.ins, packet)
+	s.ins = append(s.ins, packet.Copy())
 
 	return packet, nil
 }
