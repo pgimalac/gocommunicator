@@ -535,12 +535,7 @@ func Test_HW0_Messaging_Relaying(t *testing.T) {
 			pkt = n2Ins[0]
 
 			require.Equal(t, node3.GetAddr(), pkt.Header.Destination)
-
-			// This check is commented for the spring 2021 session because of a
-			// bug found too late on the transport implementation. See PR #47.
-			//
-			// require.Equal(t, node1.GetAddr(), pkt.Header.RelayedBy)
-
+			require.Equal(t, node1.GetAddr(), pkt.Header.RelayedBy)
 			require.Equal(t, node1.GetAddr(), pkt.Header.Source)
 
 			fake.Compare(t, pkt.Msg)
