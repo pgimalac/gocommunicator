@@ -18,17 +18,13 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 	// register the callback for chatmessages
 	conf.MessageRegistry.RegisterMessageCallback(types.ChatMessage{Message: ""}, handle_chatmessage)
 
-	node := &node{
+	return &node{
 		conf:         conf,
 		isStarted:    false,
 		returnValue:  make(chan error),
 		stopSignal:   make(chan struct{}),
-		routingTable: make(peer.RoutingTable),
+		routingTable: NewSafeRoutingTable(conf.Socket.GetAddress()),
 	}
-
-	node.AddPeer(node.GetAddress(), node.GetAddress())
-
-	return node
 }
 
 // node implements a peer to build a Peerster system
@@ -47,7 +43,7 @@ type node struct {
 	// a channel used to send a stop signal to the listening routine
 	stopSignal chan struct{}
 
-	routingTable peer.RoutingTable
+	routingTable SafeRoutingTable
 
 	sync sync.Mutex
 }
@@ -149,11 +145,7 @@ func (n *node) GetAddress() string {
 }
 
 func (n *node) GetRelay(dest string) (string, bool) {
-	n.sync.Lock()
-	defer n.sync.Unlock()
-
-	value, exists := n.routingTable[dest]
-	return value, exists
+	return n.routingTable.GetRelay(dest)
 }
 
 // Unicast implements peer.Messaging
@@ -192,16 +184,7 @@ func (n *node) AddPeer(addr ...string) {
 func (n *node) GetRoutingTable() peer.RoutingTable {
 	log.Debug().Msg("get routing table")
 
-	copiedMap := make(map[string]string)
-
-	n.sync.Lock()
-	defer n.sync.Unlock()
-
-	for k, v := range n.routingTable {
-		copiedMap[k] = v
-	}
-
-	return copiedMap
+	return n.routingTable.Copy()
 }
 
 // SetRoutingEntry implements peer.Service
@@ -211,17 +194,8 @@ func (n *node) SetRoutingEntry(origin, relayAddr string) {
 		Str("relay address", relayAddr).
 		Msg("set routing entry")
 
-	n.sync.Lock()
-	defer n.sync.Unlock()
-
 	// we ignore our own address
-	if origin == n.GetAddress() && n.routingTable[origin] == origin {
-		return
-	}
-
-	if relayAddr == "" {
-		delete(n.routingTable, origin)
-	} else {
-		n.routingTable[origin] = relayAddr
+	if origin != n.GetAddress() {
+		n.routingTable.SetRoutingEntry(origin, relayAddr)
 	}
 }

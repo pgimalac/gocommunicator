@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -37,8 +36,8 @@ func (*UDP) CreateSocket(address string) (transport.ClosableSocket, error) {
 
 	socket := Socket{
 		sock: sock,
-		ins:  make([]transport.Packet, 0),
-		outs: make([]transport.Packet, 0),
+		ins:  NewSafePacketSlice(),
+		outs: NewSafePacketSlice(),
 	}
 
 	log.Info().Str("address", socket.GetAddress()).Msg("socket created")
@@ -52,9 +51,8 @@ func (*UDP) CreateSocket(address string) (transport.ClosableSocket, error) {
 // - implements transport.ClosableSocket
 type Socket struct {
 	sock net.PacketConn
-	ins  []transport.Packet
-	outs []transport.Packet
-	sync sync.Mutex //TODO use different mutexes for each field ?
+	ins  SafePacketSlice
+	outs SafePacketSlice
 }
 
 // Close implements transport.Socket. It returns an error if already closed.
@@ -107,11 +105,9 @@ func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) 
 		return err
 	}
 
-	s.sync.Lock()
-	defer s.sync.Unlock()
 	// add the packet we sent to the list of sent packets
 	//TODO not sure if we only add the packet if it was successfully sent or not
-	s.outs = append(s.outs, pkt)
+	s.outs.Append(pkt.Copy())
 
 	log.Info().
 		Str("by", s.GetAddress()).
@@ -163,9 +159,7 @@ func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
 		Bytes("content", buffer[:size]).
 		Msg("packet received")
 
-	s.sync.Lock()
-	defer s.sync.Unlock()
-	s.ins = append(s.ins, packet.Copy())
+	s.ins.Append(packet.Copy())
 
 	return packet, nil
 }
@@ -183,12 +177,12 @@ func (s *Socket) GetAddress() string {
 func (s *Socket) GetIns() []transport.Packet {
 	log.Debug().Msg("get received messages")
 
-	return s.ins
+	return s.ins.Get()
 }
 
 // GetOuts implements transport.Socket
 func (s *Socket) GetOuts() []transport.Packet {
 	log.Debug().Msg("get sent messages")
 
-	return s.outs
+	return s.outs.Get()
 }
