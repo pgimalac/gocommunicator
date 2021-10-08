@@ -15,16 +15,23 @@ import (
 // NewPeer creates a new peer. You can change the content and location of this
 // function but you MUST NOT change its signature and package location.
 func NewPeer(conf peer.Configuration) peer.Peer {
-	// register the callback for chatmessages
-	conf.MessageRegistry.RegisterMessageCallback(types.ChatMessage{Message: ""}, handle_chatmessage)
-
-	return &node{
+	n := node{
 		conf:         conf,
 		isStarted:    false,
 		returnValue:  make(chan error),
 		stopSignal:   make(chan struct{}),
 		routingTable: NewSafeRoutingTable(conf.Socket.GetAddress()),
 	}
+
+	// register the callback for each message type
+	conf.MessageRegistry.RegisterMessageCallback(types.ChatMessage{}, n.HandleChatmessage)
+	conf.MessageRegistry.RegisterMessageCallback(types.RumorsMessage{}, n.HandleRumorsMessage)
+	conf.MessageRegistry.RegisterMessageCallback(types.AckMessage{}, n.HandleAckMessage)
+	conf.MessageRegistry.RegisterMessageCallback(types.StatusMessage{}, n.HandleStatusMessage)
+	conf.MessageRegistry.RegisterMessageCallback(types.EmptyMessage{}, n.HandleEmptyMessage)
+	conf.MessageRegistry.RegisterMessageCallback(types.PrivateMessage{}, n.HandlePrivateMessage)
+
+	return &n
 }
 
 // node implements a peer to build a Peerster system
@@ -52,7 +59,7 @@ type node struct {
 // waits for incoming packets and handles them
 // if a message is received on the stopSignal channel, the execution stops after at most the given timeout
 // writes an error
-func listen(n *node, timeout time.Duration) {
+func (n *node) listen(timeout time.Duration) {
 	for {
 		pkt, err := n.conf.Socket.Recv(timeout)
 		if err != nil && !errors.Is(err, transport.TimeoutErr(0)) {
@@ -75,7 +82,7 @@ func listen(n *node, timeout time.Duration) {
 			continue
 		}
 
-		err = handle_packet(n, pkt)
+		err = n.HandlePacket(pkt)
 		if err != nil {
 			log.Error().Err(err).Msg("")
 			n.returnValue <- err
@@ -102,7 +109,7 @@ func (n *node) Start() error {
 
 	n.isStarted = true
 
-	go listen(n, time.Second*1)
+	go n.listen(time.Second * 1)
 
 	return nil
 }
