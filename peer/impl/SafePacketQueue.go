@@ -20,11 +20,19 @@ const OUTGOING_SIZE int = 100
 // - the queue can be stopped, and subsequent add / remove calls will fail
 type SafePacketQueue struct {
 	packets []*transport.Packet
-	mutex   *sync.Mutex
-	cond    *sync.Cond
+	out     chan *transport.Packet
+
+	mutex *sync.Mutex
+	cond  *sync.Cond
+
 	context context.Context
 	cancel  context.CancelFunc
-	out     chan *transport.Packet
+}
+
+type StoppedError struct{}
+
+func (StoppedError) Error() string {
+	return "the queue has been stopped"
 }
 
 // The routine executed by the packet handler
@@ -106,6 +114,7 @@ func (queue *SafePacketQueue) IsEmpty() bool {
 // If the queue has been stopped, nothing happens and the packet is silently thrown
 func (queue *SafePacketQueue) Push(pkt ...*transport.Packet) {
 	if queue.context.Err() != nil {
+		// the queue has been stopped
 		return
 	}
 
@@ -126,7 +135,7 @@ func (queue *SafePacketQueue) Push(pkt ...*transport.Packet) {
 func (queue *SafePacketQueue) Pop(timeout time.Duration) (*transport.Packet, error) {
 	if queue.context.Err() != nil {
 		// the queue has been stopped
-		return nil, errors.New("the queue has been stopped")
+		return nil, StoppedError{}
 	}
 
 	select {
@@ -138,7 +147,7 @@ func (queue *SafePacketQueue) Pop(timeout time.Duration) (*transport.Packet, err
 		return nil, transport.TimeoutErr(timeout)
 	case <-queue.context.Done():
 		// the queue has been stopped
-		return nil, errors.New("the queue has been stopped")
+		return nil, StoppedError{}
 	}
 }
 
@@ -151,7 +160,7 @@ func (queue *SafePacketQueue) Pop(timeout time.Duration) (*transport.Packet, err
 func (queue *SafePacketQueue) Poll() (*transport.Packet, error) {
 	if queue.context.Err() != nil {
 		// the queue has been stopped
-		return nil, errors.New("the queue has been stopped")
+		return nil, StoppedError{}
 	}
 
 	select {
