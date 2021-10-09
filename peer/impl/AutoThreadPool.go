@@ -6,14 +6,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"go.dedis.ch/cs438/transport"
 )
 
 // A function generating a Packet.
-type PacketGenerator func(time.Duration) (*transport.Packet, error)
+type PacketGenerator func(time.Duration) (Msg, error)
 
 // A function handling a Packet.
-type PacketHandler func(*transport.Packet) error
+type PacketHandler func(Msg) error
 
 // A small amount of time used to simulate a non-blocking call.
 // Used to determine if packets are processed fast enough.
@@ -35,6 +36,8 @@ type AutoThreadPool struct {
 	maxSize  int
 	size     int
 
+	name string
+
 	mutex   sync.Mutex
 	ttl     time.Duration
 	context context.Context
@@ -49,6 +52,7 @@ type AutoThreadPool struct {
 func NewAutoThreadPool(coreSize, maxSize int,
 	generator PacketGenerator,
 	handler PacketHandler,
+	name string,
 	ttl time.Duration) *AutoThreadPool {
 
 	if coreSize < 1 {
@@ -61,6 +65,11 @@ func NewAutoThreadPool(coreSize, maxSize int,
 		maxSize = coreSize
 	}
 
+	log.Info().Str("pool name", name).
+		Int("core size", coreSize).
+		Int("max size", maxSize).
+		Msg("New thread pool created")
+
 	context, cancel := context.WithCancel(context.Background())
 
 	tp := &AutoThreadPool{
@@ -70,6 +79,8 @@ func NewAutoThreadPool(coreSize, maxSize int,
 		coreSize: coreSize,
 		maxSize:  maxSize,
 		size:     0,
+
+		name: name,
 
 		mutex:   sync.Mutex{},
 		ttl:     ttl,
@@ -86,6 +97,9 @@ func NewAutoThreadPool(coreSize, maxSize int,
 
 // Returns the size of the thread pool.
 func (tp *AutoThreadPool) GetSize() int {
+	tp.mutex.Lock()
+	defer tp.mutex.Unlock()
+
 	return tp.size
 }
 
@@ -108,8 +122,18 @@ func (tp *AutoThreadPool) GetCoreSize() int {
 // - if it gets one, packets aren't handled fast enough and it tries to create a new worker
 // - if it doesn't get one, it starts over
 func (tp *AutoThreadPool) worker() {
+	log.Debug().Str("pool name", tp.name).
+		Int("new pool size", tp.GetSize()).
+		Msg("start one new worker")
+
 	worked := false
-	for tp.context.Err() != nil {
+
+	for {
+		if tp.context.Err() != nil {
+			tp.mutex.Lock()
+			break
+		}
+
 		pkt, err := tp.generator(timedelta)
 		if worked && err == nil {
 			// we just finished handling a Packet, and there is already another one waiting to be handled
@@ -127,26 +151,36 @@ func (tp *AutoThreadPool) worker() {
 			if errors.Is(err, transport.TimeoutErr(0)) {
 				// in case of timeout, if there are more than the core pool size
 				// just stop the worker
-				if tp.GetSize() > tp.GetCoreSize() {
+				tp.mutex.Lock()
+				if tp.size > tp.GetCoreSize() {
 					break
 				}
+				tp.mutex.Unlock()
 			} else if tp.context.Err() != nil {
 				// some errors receiving a Packet could be due to the generator being stopped too
+				tp.mutex.Lock()
 				break
 			} else {
-				//TODO log warn error ? check what kind of error could pop here
+				log.Warn().Str("pool name", tp.name).Err(err).Msg("")
+				//TODO check what kind of error there can be
+				// and handle specifically
 			}
 			continue
 		}
 
 		err = tp.handler(pkt)
-		//TODO log warn error ? check what kind of error could pop here
+		if err != nil {
+			log.Warn().Str("pool name", tp.name).Err(err).Msg("")
+			//TODO check what kind of error there can be
+			// and handle specifically
+		}
 		worked = true
 	}
 
-	tp.mutex.Lock()
-	defer tp.mutex.Unlock()
+	// le mutex has been locked before exiting the loop
 	tp.size--
+	log.Debug().Str("pool name", tp.name).Int("new pool size", tp.size).Msg("stop one worker")
+	tp.mutex.Unlock()
 }
 
 // Attempts to create a new worker, and increases the pool size.
@@ -172,5 +206,7 @@ func (tp *AutoThreadPool) TrySpawnWorker() {
 // Once this function has been called, all workers will stop within
 // a finite time, a no new worker will be created.
 func (tp *AutoThreadPool) Stop() {
+	log.Info().Str("pool name", tp.name).Msg("stop pool thread")
+
 	tp.cancel()
 }

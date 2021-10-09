@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"go.dedis.ch/cs438/transport"
 )
 
@@ -19,14 +20,16 @@ const OUTGOING_SIZE int = 100
 // - a Packet can be removed from the queue without blocking
 // - the queue can be stopped, and subsequent add / remove calls will fail
 type SafePacketQueue struct {
-	packets []*transport.Packet
-	out     chan *transport.Packet
+	packets []Msg
+	out     chan Msg
 
 	mutex *sync.Mutex
 	cond  *sync.Cond
 
 	context context.Context
 	cancel  context.CancelFunc
+
+	name string
 }
 
 type StoppedError struct{}
@@ -56,6 +59,8 @@ func (queue *SafePacketQueue) packetHandler() {
 		pkt := queue.packets[0]
 		queue.packets = queue.packets[1:]
 
+		log.Debug().Str("pool name", queue.name).Msg("remove one element from the queue and put it in the channel")
+
 		// no need to lock the mutex in this section
 		queue.mutex.Unlock()
 
@@ -76,19 +81,20 @@ func (queue *SafePacketQueue) packetHandler() {
 
 // Returns an empty SafePacketQueue.
 // Starts the packet handler routine.
-func NewSafePacketQueue() *SafePacketQueue {
+func NewSafePacketQueue(name string) *SafePacketQueue {
 	mutex := &sync.Mutex{}
 	cond := sync.NewCond(mutex)
 	context, cancel := context.WithCancel(context.Background())
-	out := make(chan *transport.Packet, OUTGOING_SIZE)
+	out := make(chan Msg, OUTGOING_SIZE)
 
 	queue := &SafePacketQueue{
-		packets: make([]*transport.Packet, 0),
+		packets: make([]Msg, 0),
 		mutex:   mutex,
 		cond:    cond,
 		context: context,
 		cancel:  cancel,
 		out:     out,
+		name:    name,
 	}
 
 	go queue.packetHandler()
@@ -112,18 +118,20 @@ func (queue *SafePacketQueue) IsEmpty() bool {
 // Adds the given elements at the end of the queue.
 // Wakes up the packet handler routine
 // If the queue has been stopped, nothing happens and the packet is silently thrown
-func (queue *SafePacketQueue) Push(pkt ...*transport.Packet) {
+func (queue *SafePacketQueue) Push(pkt Msg) error {
 	if queue.context.Err() != nil {
 		// the queue has been stopped
-		return
+		return StoppedError{}
 	}
 
 	queue.mutex.Lock()
 	defer queue.mutex.Unlock()
 
-	queue.packets = append(queue.packets, pkt...)
+	queue.packets = append(queue.packets, pkt)
+	log.Debug().Str("pool name", queue.name).Msg("push one element in the queue")
 
 	queue.cond.Broadcast()
+	return nil
 }
 
 // Blocking function to remove an element, with a timeout
@@ -132,10 +140,10 @@ func (queue *SafePacketQueue) Push(pkt ...*transport.Packet) {
 // If the queue has been stopped, returns an error.
 // It is possible that a packet is returned even if the queue has been stopped,
 // but this can only happen if Poll was called before the queue was stopped.
-func (queue *SafePacketQueue) Pop(timeout time.Duration) (*transport.Packet, error) {
+func (queue *SafePacketQueue) Pop(timeout time.Duration) (Msg, error) {
 	if queue.context.Err() != nil {
 		// the queue has been stopped
-		return nil, StoppedError{}
+		return Msg{}, StoppedError{}
 	}
 
 	select {
@@ -144,10 +152,11 @@ func (queue *SafePacketQueue) Pop(timeout time.Duration) (*transport.Packet, err
 		return pkt, nil
 	case <-time.After(timeout):
 		// there was no element available before the timeout
-		return nil, transport.TimeoutErr(timeout)
+		log.Debug().Str("pool name", queue.name).Msg("pop one element from the queue")
+		return Msg{}, transport.TimeoutErr(timeout)
 	case <-queue.context.Done():
 		// the queue has been stopped
-		return nil, StoppedError{}
+		return Msg{}, StoppedError{}
 	}
 }
 
@@ -157,19 +166,20 @@ func (queue *SafePacketQueue) Pop(timeout time.Duration) (*transport.Packet, err
 // Returns an error if the queue has been stopped.
 // It is possible that a packet is returned even if the queue has been stopped,
 // but this can only happen if Poll was called before the queue was stopped.
-func (queue *SafePacketQueue) Poll() (*transport.Packet, error) {
+func (queue *SafePacketQueue) Poll() (Msg, error) {
 	if queue.context.Err() != nil {
 		// the queue has been stopped
-		return nil, StoppedError{}
+		return Msg{}, StoppedError{}
 	}
 
 	select {
 	case pkt := <-queue.out:
 		// we got an element from the outgoing queue
+		log.Debug().Str("pool name", queue.name).Msg("pop one element from the queue")
 		return pkt, nil
 	default:
 		// there was no element available
-		return nil, errors.New("the queue is empty")
+		return Msg{}, errors.New("the queue is empty")
 	}
 }
 
@@ -177,6 +187,8 @@ func (queue *SafePacketQueue) Poll() (*transport.Packet, error) {
 func (queue *SafePacketQueue) Stop() {
 	queue.mutex.Lock()
 	defer queue.mutex.Unlock()
+
+	log.Debug().Str("pool name", queue.name).Msg("stop the queue")
 
 	// stop the routines
 	queue.cancel()

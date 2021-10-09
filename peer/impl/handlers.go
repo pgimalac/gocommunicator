@@ -8,7 +8,11 @@ import (
 	"go.dedis.ch/cs438/types"
 )
 
-func (n *node) HandlePacket(pkt transport.Packet) error {
+func (n *node) HandleMsg(msg Msg) error {
+	return n.HandlePkt(msg.pkt)
+}
+
+func (n *node) HandlePkt(pkt transport.Packet) error {
 	addr := n.GetAddress()
 
 	log.Info().

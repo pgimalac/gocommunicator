@@ -17,9 +17,6 @@ import (
 func NewPeer(conf peer.Configuration) peer.Peer {
 	n := node{
 		conf:         conf,
-		isStarted:    false,
-		returnValue:  make(chan error),
-		stopSignal:   make(chan struct{}),
 		routingTable: NewSafeRoutingTable(conf.Socket.GetAddress()),
 	}
 
@@ -42,53 +39,21 @@ type node struct {
 
 	conf peer.Configuration
 
-	isStarted bool
-
-	// a channel used by the listening routine to return an error
-	returnValue chan error
-
-	// a channel used to send a stop signal to the listening routine
-	stopSignal chan struct{}
+	rt *Runtime
 
 	routingTable SafeRoutingTable
 
 	sync sync.Mutex
 }
 
-// the listening routine
-// waits for incoming packets and handles them
-// if a message is received on the stopSignal channel, the execution stops after at most the given timeout
-// writes an error
-func (n *node) listen(timeout time.Duration) {
-	for {
-		pkt, err := n.conf.Socket.Recv(timeout)
-		if err != nil && !errors.Is(err, transport.TimeoutErr(0)) {
-			// there is an actual error
-			log.Error().Err(err).Msg("")
-			n.returnValue <- err
-			return
-		}
+type Runtime struct {
+	queueRec, queueSend      *SafePacketQueue
+	tpRead, tpHandle, tpSend *AutoThreadPool
+}
 
-		select {
-		case <-n.stopSignal:
-			// we received a signal to stop listening
-			log.Info().Msg("message received to stop listening")
-			n.returnValue <- nil
-			return
-		default:
-		}
-
-		if errors.Is(err, transport.TimeoutErr(0)) {
-			continue
-		}
-
-		err = n.HandlePacket(pkt)
-		if err != nil {
-			log.Error().Err(err).Msg("")
-			n.returnValue <- err
-			return
-		}
-	}
+type Msg struct {
+	pkt  transport.Packet
+	dest string
 }
 
 // Start implements peer.Service
@@ -103,13 +68,43 @@ func (n *node) Start() error {
 	n.sync.Lock()
 	defer n.sync.Unlock()
 
-	if n.isStarted {
+	if n.rt != nil {
 		return errors.New("the service is already started")
 	}
 
-	n.isStarted = true
+	// the queue used to manage Packets that have been received
+	// and that are yet to be handled
+	queueRec := NewSafePacketQueue("received packets queue")
 
-	go n.listen(time.Second * 1)
+	// the queue used to manage Packets that have been created
+	// and that are yet to be sent
+	queueSend := NewSafePacketQueue("to send packets queue")
+
+	// the read thread pool
+	// reads Packets from the socket and adds them to queueRec
+	tpRead := NewAutoThreadPool(2, 1e6, func(timeout time.Duration) (Msg, error) {
+		pkt, err := n.conf.Socket.Recv(timeout)
+		return Msg{pkt, ""}, err
+	}, queueRec.Push, "read pool", time.Second*5)
+
+	// the handle thread pool
+	// handles received packets, and possibly adds packets to send to queueSend
+	tpHandle := NewAutoThreadPool(5, 1e6, queueRec.Pop, n.HandleMsg, "handle pool", time.Second*5)
+
+	// the send thread pool
+	// sends Packets from queueSend
+	tpSend := NewAutoThreadPool(2, 1e6, queueSend.Pop, func(msg Msg) error {
+		for {
+			err := n.conf.Socket.Send(msg.dest, msg.pkt, time.Second*5)
+			if !errors.Is(err, transport.TimeoutErr(0)) {
+				return err
+			}
+		}
+	}, "send pool", time.Second*5)
+
+	n.rt = &Runtime{
+		queueRec, queueSend, tpRead, tpHandle, tpSend,
+	}
 
 	return nil
 }
@@ -125,26 +120,22 @@ func (n *node) Stop() error {
 	}
 
 	n.sync.Lock()
+	defer n.sync.Unlock()
 
-	if !n.isStarted {
+	if n.rt == nil {
 		n.sync.Unlock()
 		return errors.New("the service is already stopped")
 	}
 
-	n.isStarted = false
-	n.stopSignal <- struct{}{}
+	n.rt.queueRec.Stop()
+	n.rt.queueSend.Stop()
+	n.rt.tpRead.Stop()
+	n.rt.tpHandle.Stop()
+	n.rt.tpSend.Stop()
 
-	n.sync.Unlock()
+	n.rt = nil
 
-	err := <-n.returnValue
-
-	if err != nil {
-		// the listening routine encountered an error,
-		// it did not read the stop signal that was just sent
-		<-n.stopSignal
-	}
-
-	return err
+	return nil
 }
 
 func (n *node) GetAddress() string {
