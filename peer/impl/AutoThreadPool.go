@@ -160,7 +160,7 @@ func (tp *AutoThreadPool) worker() {
 				// some errors receiving a Packet could be due to the generator being stopped too
 				tp.mutex.Lock()
 				break
-			} else {
+			} else if !errors.Is(err, StoppedError{}) {
 				log.Warn().Str("pool name", tp.name).Err(err).Msg("")
 				//TODO check what kind of error there can be
 				// and handle specifically
@@ -169,7 +169,7 @@ func (tp *AutoThreadPool) worker() {
 		}
 
 		err = tp.handler(pkt)
-		if err != nil {
+		if err != nil && !errors.Is(err, StoppedError{}) {
 			log.Warn().Str("pool name", tp.name).Err(err).Msg("")
 			//TODO check what kind of error there can be
 			// and handle specifically

@@ -127,11 +127,12 @@ func (n *node) Stop() error {
 		return errors.New("the service is already stopped")
 	}
 
-	n.rt.queueRec.Stop()
-	n.rt.queueSend.Stop()
 	n.rt.tpRead.Stop()
 	n.rt.tpHandle.Stop()
 	n.rt.tpSend.Stop()
+
+	n.rt.queueRec.Stop()
+	n.rt.queueSend.Stop()
 
 	n.rt = nil
 
