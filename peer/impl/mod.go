@@ -44,6 +44,8 @@ type node struct {
 	routingTable SafeRoutingTable
 
 	sync sync.Mutex
+
+	rumorNum uint
 }
 
 type Runtime struct {
@@ -169,6 +171,42 @@ func (n *node) Unicast(dest string, msg transport.Message) error {
 	}
 
 	return n.conf.Socket.Send(relay, pkt, 0) // for now we don't care about the timeout
+}
+
+// Broadcast implements peer.Messaging
+func (n *node) Broadcast(msg transport.Message) error {
+	addr := n.GetAddress()
+	header := transport.NewHeader(addr, addr, addr, 0)
+	pkt := transport.Packet{Header: &header, Msg: &msg}
+
+	n.sync.Lock()
+	n.rumorNum += 1
+	rm := types.RumorsMessage{
+		Rumors: []types.Rumor{
+			{
+				Origin:   addr,
+				Msg:      &msg,
+				Sequence: n.rumorNum,
+			},
+		},
+	}
+	n.sync.Unlock()
+
+	// use HandlePkt instead of Registry.ProcessesPacket to have the packet logged as any other received packet
+	err := n.HandlePkt(pkt)
+	if err != nil {
+		return err
+	}
+
+	//TODO create packet from rm
+	rmPacket := transport.Packet{}
+	//TODO get random neighbor
+	err = n.rt.queueSend.Push(Msg{rmPacket, n.GetRandomNeighbor()})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // AddPeer implements peer.Service

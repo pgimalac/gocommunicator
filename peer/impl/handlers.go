@@ -36,7 +36,6 @@ func (n *node) HandleChatmessage(msg types.Message, pkt transport.Packet) error 
 }
 
 func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) error {
-	//TODO
 	return nil
 }
 
