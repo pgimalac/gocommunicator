@@ -176,8 +176,7 @@ func (n *node) Unicast(dest string, msg transport.Message) error {
 // Broadcast implements peer.Messaging
 func (n *node) Broadcast(msg transport.Message) error {
 	addr := n.GetAddress()
-	header := transport.NewHeader(addr, addr, addr, 0)
-	pkt := transport.Packet{Header: &header, Msg: &msg}
+	pkt := n.TransportMessageToPacket(msg, addr, addr, addr, 0)
 
 	n.sync.Lock()
 	n.rumorNum += 1
@@ -198,10 +197,19 @@ func (n *node) Broadcast(msg transport.Message) error {
 		return err
 	}
 
-	//TODO create packet from rm
-	rmPacket := transport.Packet{}
-	//TODO get random neighbor
-	err = n.rt.queueSend.Push(Msg{rmPacket, n.GetRandomNeighbor()})
+	tmsg, err := n.TypeToTransportMessage(rm)
+	if err != nil {
+		return err
+	}
+
+	dest, err := n.routingTable.GetRandomNeighbor()
+	if err != nil {
+		return err
+	}
+
+	rmPacket := n.TransportMessageToPacket(tmsg, addr, addr, dest, 0)
+
+	err = n.rt.queueSend.Push(Msg{rmPacket, dest})
 	if err != nil {
 		return err
 	}
@@ -235,4 +243,30 @@ func (n *node) SetRoutingEntry(origin, relayAddr string) {
 	if origin != n.GetAddress() {
 		n.routingTable.SetRoutingEntry(origin, relayAddr)
 	}
+}
+
+// Helper function to get a transport.Message from a types.Message
+func (n *node) TypeToTransportMessage(msg types.Message) (transport.Message, error) {
+	return n.conf.MessageRegistry.MarshalMessage(msg)
+}
+
+// Helper function to get a types.Message from a transport.Message
+func (n *node) TransportToTypeMessage(msg transport.Message) (types.Message, error) {
+	var tmsg types.Message = nil
+	err := n.conf.MessageRegistry.UnmarshalMessage(&msg, tmsg)
+	return tmsg, err
+}
+
+// Helper function to get a transport.Packet from a transport.Message and other missing header information
+func (n *node) TransportMessageToPacket(msg transport.Message, source, relay, dest string, ttl uint) transport.Packet {
+	header := transport.NewHeader(source, relay, dest, ttl)
+	return transport.Packet{
+		Header: &header,
+		Msg:    &msg,
+	}
+}
+
+// Helper function to get a transport.Message from a transport.Packet
+func (n *node) PacketToTransportMessage(pkt transport.Packet) transport.Message {
+	return *pkt.Msg
 }
