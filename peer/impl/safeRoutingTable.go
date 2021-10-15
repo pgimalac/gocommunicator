@@ -118,15 +118,32 @@ func (table *SafeRoutingTable) SetRoutingEntry(dest, relayAddr string) {
 // Returns a random neighbor from the routing table.
 // A neighbor is an address that is not our own address,
 // and whose relay is itself.
+// Assumes that there is no neighbor with an empty address.
 func (table *SafeRoutingTable) GetRandomNeighbor() (string, error) {
+	return table.GetRandomNeighborBut("")
+}
+
+// Returns a random neighbor from the routing table, except the given one.
+// A neighbor is an address that is not our own address,
+// and whose relay is itself.
+func (table *SafeRoutingTable) GetRandomNeighborBut(but string) (string, error) {
 	table.sync.Lock()
 	defer table.sync.Unlock()
 
+	is_in := 0
+	pos, ok := table.positions[but]
+	if ok && but != table.neighbors[0] {
+		is_in = 1
+	}
+
 	// the first address is our own address
-	if len(table.neighbors) <= 1 {
+	if len(table.neighbors) <= 1+is_in {
 		return "", errors.New("there is no neighbor")
 	}
 
-	index := rand.Intn(len(table.neighbors) - 1)
-	return table.neighbors[index+1], nil
+	index := rand.Intn(len(table.neighbors) - 1 - is_in)
+	if is_in == 1 && index >= pos {
+		return table.neighbors[2+index], nil
+	}
+	return table.neighbors[1+index], nil
 }

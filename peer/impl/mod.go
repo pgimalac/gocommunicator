@@ -18,6 +18,7 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 	n := node{
 		conf:         conf,
 		routingTable: NewSafeRoutingTable(conf.Socket.GetAddress()),
+		status:       NewSafeStatusMessage(),
 	}
 
 	// register the callback for each message type
@@ -46,6 +47,8 @@ type node struct {
 	sync sync.Mutex
 
 	rumorNum uint
+
+	status SafeStatusMessage
 }
 
 type Runtime struct {
@@ -149,6 +152,11 @@ func (n *node) GetRelay(dest string) (string, bool) {
 	return n.routingTable.GetRelay(dest)
 }
 
+func (n *node) IsNeighbor(dest string) bool {
+	relay, ok := n.GetRelay(dest)
+	return ok && relay == dest
+}
+
 // Unicast implements peer.Messaging
 func (n *node) Unicast(dest string, msg transport.Message) error {
 	log.Info().
@@ -197,19 +205,17 @@ func (n *node) Broadcast(msg transport.Message) error {
 		return err
 	}
 
-	tmsg, err := n.TypeToTransportMessage(rm)
-	if err != nil {
-		return err
-	}
-
 	dest, err := n.routingTable.GetRandomNeighbor()
 	if err != nil {
 		return err
 	}
 
-	rmPacket := n.TransportMessageToPacket(tmsg, addr, addr, dest, 0)
+	sendpkt, err := n.TypeMessageToPacket(rm, addr, addr, "", 0)
+	if err != nil {
+		return err
+	}
 
-	err = n.rt.queueSend.Push(Msg{rmPacket, dest})
+	err = n.rt.queueSend.Push(Msg{sendpkt, dest})
 	if err != nil {
 		return err
 	}
@@ -269,4 +275,12 @@ func (n *node) TransportMessageToPacket(msg transport.Message, source, relay, de
 // Helper function to get a transport.Message from a transport.Packet
 func (n *node) PacketToTransportMessage(pkt transport.Packet) transport.Message {
 	return *pkt.Msg
+}
+
+func (n *node) TypeMessageToPacket(msg types.Message, source, relay, dest string, ttl uint) (transport.Packet, error) {
+	tr, err := n.TypeToTransportMessage(msg)
+	if err != nil {
+		return transport.Packet{}, err
+	}
+	return n.TransportMessageToPacket(tr, source, relay, dest, ttl), nil
 }

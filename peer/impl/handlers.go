@@ -3,6 +3,8 @@ package impl
 // the functions defined in this file handle all kinds of packets
 
 import (
+	"sort"
+
 	"github.com/rs/zerolog/log"
 	"go.dedis.ch/cs438/transport"
 	"go.dedis.ch/cs438/types"
@@ -36,6 +38,50 @@ func (n *node) HandleChatmessage(msg types.Message, pkt transport.Packet) error 
 }
 
 func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) error {
+	addr := n.GetAddress()
+	ack := types.AckMessage{AckedPacketID: pkt.Header.PacketID, Status: n.status.Copy()}
+	ackpkt, err := n.TypeMessageToPacket(ack, addr, addr, pkt.Header.RelayedBy, 0)
+	if err != nil {
+		return err
+	}
+	if !n.IsNeighbor(pkt.Header.RelayedBy) {
+		//TODO check if we add the peer or return an error ?
+		n.AddPeer(pkt.Header.RelayedBy)
+	}
+	n.rt.queueSend.Push(Msg{pkt: ackpkt, dest: pkt.Header.RelayedBy})
+
+	var rumorstype types.Message
+	rumorstype, err = n.TransportToTypeMessage(*pkt.Msg)
+	if err != nil {
+		return err
+	}
+
+	relay := pkt.Header.RelayedBy
+	ttl := pkt.Header.TTL
+
+	rumorsmsg := rumorstype.(types.RumorsMessage)
+	isNew := false
+
+	// Sort the rumors by their sequence number, so that dont ignore X+1 then read X
+	sort.Slice(rumorsmsg.Rumors, func(i, j int) bool {
+		return rumorsmsg.Rumors[i].Sequence < rumorsmsg.Rumors[j].Sequence
+	})
+
+	for _, rumor := range rumorsmsg.Rumors {
+		if _, ok := n.status.IsNext(rumor.Origin, rumor.Sequence); ok {
+			pkt := n.TransportMessageToPacket(*rumor.Msg, rumor.Origin, relay, addr, ttl)
+			err = n.HandlePkt(pkt)
+			if err != nil {
+				return err
+			}
+			isNew = true
+		}
+	}
+
+	if isNew {
+
+	}
+
 	return nil
 }
 
