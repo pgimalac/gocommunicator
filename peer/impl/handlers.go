@@ -79,7 +79,13 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 	}
 
 	if isNew {
-
+		dest, err := n.routingTable.GetRandomNeighborBut(pkt.Header.RelayedBy)
+		if err != nil {
+			return nil
+		}
+		sendpkt := pkt.Copy()
+		sendpkt.Header.RelayedBy = addr
+		n.rt.queueSend.Push(Msg{pkt: pkt, dest: dest})
 	}
 
 	return nil

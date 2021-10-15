@@ -207,10 +207,10 @@ func (n *node) Broadcast(msg transport.Message) error {
 
 	dest, err := n.routingTable.GetRandomNeighbor()
 	if err != nil {
-		return err
+		return nil
 	}
 
-	sendpkt, err := n.TypeMessageToPacket(rm, addr, addr, "", 0)
+	sendpkt, err := n.TypeMessageToPacket(rm, addr, addr, dest, 0)
 	if err != nil {
 		return err
 	}
@@ -258,7 +258,24 @@ func (n *node) TypeToTransportMessage(msg types.Message) (transport.Message, err
 
 // Helper function to get a types.Message from a transport.Message
 func (n *node) TransportToTypeMessage(msg transport.Message) (types.Message, error) {
-	var tmsg types.Message = nil
+	var tmsg types.Message
+	switch msg.Type {
+	case types.ChatMessage{}.Name():
+		tmsg = &types.ChatMessage{}
+	case types.RumorsMessage{}.Name():
+		tmsg = &types.RumorsMessage{}
+	case types.AckMessage{}.Name():
+		tmsg = &types.AckMessage{}
+	case types.StatusMessage{}.Name():
+		tmsg = &types.StatusMessage{}
+	case types.EmptyMessage{}.Name():
+		tmsg = &types.EmptyMessage{}
+	case types.PrivateMessage{}.Name():
+		tmsg = &types.PrivateMessage{}
+	default:
+		return nil, errors.New("unknown message type")
+	}
+
 	err := n.conf.MessageRegistry.UnmarshalMessage(&msg, tmsg)
 	return tmsg, err
 }
