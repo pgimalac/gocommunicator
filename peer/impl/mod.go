@@ -3,9 +3,11 @@ package impl
 import (
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.dedis.ch/cs438/peer"
 	"go.dedis.ch/cs438/transport"
@@ -61,9 +63,33 @@ type Msg struct {
 	dest string
 }
 
+// Variables used to synchronize the initialization of the logger
+var mutex sync.Mutex
+var initialized bool = false
+
+// Initializes the logger, if not already done
+func startLog() {
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	if !initialized {
+		zerolog.TimeFieldFormat = time.RFC3339Nano // for increased time precision
+		zerolog.SetGlobalLevel(zerolog.DebugLevel) // log level
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: "15:04:05.000"}).
+			With().
+			Timestamp().
+			//Caller(). // Displays the name of the file and the line where the log was called
+			Logger()
+
+		initialized = true
+	}
+}
+
 // Start implements peer.Service
 // It returns an error if the service is already started.
 func (n *node) Start() error {
+	startLog()
+
 	log.Info().Msg("start the service")
 
 	if n == nil {
