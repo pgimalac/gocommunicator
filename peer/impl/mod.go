@@ -256,30 +256,6 @@ func (n *node) TypeToTransportMessage(msg types.Message) (transport.Message, err
 	return n.conf.MessageRegistry.MarshalMessage(msg)
 }
 
-// Helper function to get a types.Message from a transport.Message
-func (n *node) TransportToTypeMessage(msg transport.Message) (types.Message, error) {
-	var tmsg types.Message
-	switch msg.Type {
-	case types.ChatMessage{}.Name():
-		tmsg = &types.ChatMessage{}
-	case types.RumorsMessage{}.Name():
-		tmsg = &types.RumorsMessage{}
-	case types.AckMessage{}.Name():
-		tmsg = &types.AckMessage{}
-	case types.StatusMessage{}.Name():
-		tmsg = &types.StatusMessage{}
-	case types.EmptyMessage{}.Name():
-		tmsg = &types.EmptyMessage{}
-	case types.PrivateMessage{}.Name():
-		tmsg = &types.PrivateMessage{}
-	default:
-		return nil, errors.New("unknown message type")
-	}
-
-	err := n.conf.MessageRegistry.UnmarshalMessage(&msg, tmsg)
-	return tmsg, err
-}
-
 // Helper function to get a transport.Packet from a transport.Message and other missing header information
 func (n *node) TransportMessageToPacket(msg transport.Message, source, relay, dest string, ttl uint) transport.Packet {
 	header := transport.NewHeader(source, relay, dest, ttl)

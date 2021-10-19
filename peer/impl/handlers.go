@@ -50,16 +50,10 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 	}
 	n.rt.queueSend.Push(Msg{pkt: ackpkt, dest: pkt.Header.RelayedBy})
 
-	var rumorstype types.Message
-	rumorstype, err = n.TransportToTypeMessage(*pkt.Msg)
-	if err != nil {
-		return err
-	}
-
 	relay := pkt.Header.RelayedBy
 	ttl := pkt.Header.TTL
 
-	rumorsmsg := rumorstype.(types.RumorsMessage)
+	rumorsmsg := msg.(*types.RumorsMessage)
 	isNew := false
 
 	// Sort the rumors by their sequence number, so that dont ignore X+1 then read X
