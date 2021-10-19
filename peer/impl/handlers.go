@@ -68,11 +68,16 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 		return err
 	}
 
-	if !n.IsNeighbor(pkt.Header.RelayedBy) {
-		//TODO check if we add the peer or return an error ?
-		n.AddPeer(pkt.Header.RelayedBy)
-	}
+	// Don't add the peer nor return an error ? just send the ack blindly ?
+	// if !n.IsNeighbor(pkt.Header.RelayedBy) {
+	// 	//TODO check if we add the peer or return an error ?
+	// 	n.AddPeer(pkt.Header.RelayedBy)
+	// }
 	n.rt.queueSend.Push(Msg{pkt: ackpkt, dest: pkt.Header.RelayedBy})
+
+	if !n.IsNeighbor(pkt.Header.Source) {
+		n.SetRoutingEntry(pkt.Header.Source, pkt.Header.RelayedBy)
+	}
 
 	if isNew {
 		dest, err := n.routingTable.GetRandomNeighborBut(pkt.Header.RelayedBy)
@@ -81,7 +86,8 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 		}
 		sendpkt := pkt.Copy()
 		sendpkt.Header.RelayedBy = addr
-		n.rt.queueSend.Push(Msg{pkt: pkt, dest: dest})
+		sendpkt.Header.Destination = dest
+		n.rt.queueSend.Push(Msg{pkt: sendpkt, dest: dest})
 	}
 
 	return nil
