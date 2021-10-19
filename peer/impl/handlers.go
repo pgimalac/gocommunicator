@@ -39,16 +39,6 @@ func (n *node) HandleChatmessage(msg types.Message, pkt transport.Packet) error 
 
 func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) error {
 	addr := n.GetAddress()
-	ack := types.AckMessage{AckedPacketID: pkt.Header.PacketID, Status: n.status.Copy()}
-	ackpkt, err := n.TypeMessageToPacket(ack, addr, addr, pkt.Header.RelayedBy, 0)
-	if err != nil {
-		return err
-	}
-	if !n.IsNeighbor(pkt.Header.RelayedBy) {
-		//TODO check if we add the peer or return an error ?
-		n.AddPeer(pkt.Header.RelayedBy)
-	}
-	n.rt.queueSend.Push(Msg{pkt: ackpkt, dest: pkt.Header.RelayedBy})
 
 	relay := pkt.Header.RelayedBy
 	ttl := pkt.Header.TTL
@@ -64,13 +54,25 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 	for _, rumor := range rumorsmsg.Rumors {
 		if _, ok := n.status.IsNext(rumor.Origin, rumor.Sequence); ok {
 			pkt := n.TransportMessageToPacket(*rumor.Msg, rumor.Origin, relay, addr, ttl)
-			err = n.HandlePkt(pkt)
+			err := n.HandlePkt(pkt)
 			if err != nil {
-				return err
+				log.Warn().Err(err).Msg("")
 			}
 			isNew = true
 		}
 	}
+
+	ack := types.AckMessage{AckedPacketID: pkt.Header.PacketID, Status: n.status.Copy()}
+	ackpkt, err := n.TypeMessageToPacket(ack, addr, addr, pkt.Header.RelayedBy, 0)
+	if err != nil {
+		return err
+	}
+
+	if !n.IsNeighbor(pkt.Header.RelayedBy) {
+		//TODO check if we add the peer or return an error ?
+		n.AddPeer(pkt.Header.RelayedBy)
+	}
+	n.rt.queueSend.Push(Msg{pkt: ackpkt, dest: pkt.Header.RelayedBy})
 
 	if isNew {
 		dest, err := n.routingTable.GetRandomNeighborBut(pkt.Header.RelayedBy)

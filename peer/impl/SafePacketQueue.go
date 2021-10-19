@@ -59,7 +59,9 @@ func (queue *SafePacketQueue) packetHandler() {
 		pkt := queue.packets[0]
 		queue.packets = queue.packets[1:]
 
-		log.Debug().Str("pool name", queue.name).Msg("remove one element from the queue and put it in the channel")
+		log.Debug().
+			Str("pool name", queue.name).
+			Msg("remove one element from the queue and put it in the channel")
 
 		// no need to lock the mutex in this section
 		queue.mutex.Unlock()
@@ -82,6 +84,8 @@ func (queue *SafePacketQueue) packetHandler() {
 // Returns an empty SafePacketQueue.
 // Starts the packet handler routine.
 func NewSafePacketQueue(name string) *SafePacketQueue {
+	log.Info().Str("pool name", name).Msg("start the queue")
+
 	mutex := &sync.Mutex{}
 	cond := sync.NewCond(mutex)
 	context, cancel := context.WithCancel(context.Background())
@@ -188,7 +192,7 @@ func (queue *SafePacketQueue) Stop() {
 	queue.mutex.Lock()
 	defer queue.mutex.Unlock()
 
-	log.Debug().Str("pool name", queue.name).Msg("stop the queue")
+	log.Info().Str("pool name", queue.name).Msg("stop the queue")
 
 	// stop the routines
 	queue.cancel()

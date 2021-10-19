@@ -74,7 +74,7 @@ func startLog() {
 
 	if !initialized {
 		zerolog.TimeFieldFormat = time.RFC3339Nano // for increased time precision
-		zerolog.SetGlobalLevel(zerolog.DebugLevel) // log level
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)  // log level
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: "15:04:05.000"}).
 			With().
 			Timestamp().
@@ -252,7 +252,10 @@ func (n *node) Broadcast(msg transport.Message) error {
 // AddPeer implements peer.Service
 func (n *node) AddPeer(addr ...string) {
 	for _, peer := range addr {
-		log.Info().Str("address", peer).Msg("add peer")
+		log.Info().
+			Str("by", n.GetAddress()).
+			Str("address", peer).
+			Msg("add peer")
 		n.SetRoutingEntry(peer, peer) // no relay ?
 	}
 }
@@ -296,6 +299,7 @@ func (n *node) PacketToTransportMessage(pkt transport.Packet) transport.Message 
 	return *pkt.Msg
 }
 
+// Helper function to get a transport.Packet from a types.Message and other missing header information
 func (n *node) TypeMessageToPacket(msg types.Message, source, relay, dest string, ttl uint) (transport.Packet, error) {
 	tr, err := n.TypeToTransportMessage(msg)
 	if err != nil {

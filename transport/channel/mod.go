@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"go.dedis.ch/cs438/internal/traffic"
 	"go.dedis.ch/cs438/transport"
 	"golang.org/x/xerrors"
@@ -87,6 +88,15 @@ func (s *Socket) Close() error {
 
 // Send implements transport.Socket.
 func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) error {
+	log.Debug().
+		Str("by", s.GetAddress()).
+		Str("destination", dest).
+		Str("header", pkt.Header.String()).
+		Str("message type", pkt.Msg.Type).
+		Bytes("payload", pkt.Msg.Payload).
+		Int64("timeout (ms)", timeout.Milliseconds()).
+		Msg("send packet")
+
 	s.RLock()
 	to, ok := s.incomings[dest]
 
@@ -109,11 +119,22 @@ func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) 
 	s.outs.add(pkt)
 	s.traffic.LogSent(pkt.Header.RelayedBy, dest, pkt)
 
+	log.Info().
+		Str("by", s.GetAddress()).
+		Str("to", dest).
+		Int("size", len(pkt.Msg.Payload)).
+		Msg("packet sent")
+
 	return nil
 }
 
 // Recv implements transport.Socket.
 func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
+	log.Debug().
+		Str("by", s.GetAddress()).
+		Int64("timeout (ms)", timeout.Milliseconds()).
+		Msg("Recv call")
+
 	s.RLock()
 	myChan := s.incomings[s.myAddr]
 	s.RUnlock()
@@ -124,6 +145,14 @@ func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
 	case pkt := <-myChan:
 		s.traffic.LogRecv(pkt.Header.RelayedBy, s.myAddr, pkt)
 		s.ins.add(pkt.Copy())
+
+		log.Info().
+			Str("by", s.GetAddress()).
+			Str("from", pkt.Header.RelayedBy).
+			Int("size", len(pkt.Msg.Payload)).
+			Bytes("content", pkt.Msg.Payload).
+			Msg("packet received")
+
 		return pkt, nil
 	}
 }

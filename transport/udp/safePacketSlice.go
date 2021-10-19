@@ -26,9 +26,15 @@ func (slice *SafePacketSlice) Append(packet transport.Packet) {
 	slice.slice = append(slice.slice, packet)
 }
 
-// Returns the underlying "unsafe" slice
-// the returned slice should not be modified
-//TODO return a copy ?
+// Returns a copy of the underlying "unsafe" slice
 func (slice *SafePacketSlice) Get() []transport.Packet {
-	return slice.slice
+	slice.sync.Lock()
+	defer slice.sync.Unlock()
+
+	slcpy := make([]transport.Packet, len(slice.slice))
+	for pos, pkt := range slice.slice {
+		slcpy[pos] = pkt.Copy()
+	}
+
+	return slcpy
 }
