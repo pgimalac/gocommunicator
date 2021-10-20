@@ -132,7 +132,7 @@ func (n *node) HandleStatusMessage(msg types.Message, pkt transport.Packet) erro
 	mystatus := n.status.Copy()
 	// Add the peers we have but the other peer doesn't
 	// It makes it easier to find what they lack
-	for peer, _ := range mystatus {
+	for peer := range mystatus {
 		if _, ok := status[peer]; !ok {
 			status[peer] = 0
 		}
@@ -176,6 +176,12 @@ func (*node) HandleEmptyMessage(msg types.Message, pkt transport.Packet) error {
 }
 
 func (n *node) HandlePrivateMessage(msg types.Message, pkt transport.Packet) error {
-	//TODO
+	priv := msg.(*types.PrivateMessage)
+
+	if _, ok := priv.Recipients[n.GetAddress()]; ok {
+		pkt := n.TransportMessageToPacket(*priv.Msg, pkt.Header.Source, pkt.Header.RelayedBy, n.GetAddress(), 0)
+		n.HandlePkt(pkt)
+	}
+
 	return nil
 }
