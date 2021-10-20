@@ -150,3 +150,11 @@ func (table *SafeRoutingTable) GetRandomNeighborBut(but string) (string, error) 
 	}
 	return table.neighbors[1+index], nil
 }
+
+// Returns a copy of the list of neighbors, except ourselves.
+func (table *SafeRoutingTable) NeighborsCopy() []string {
+	table.sync.Lock()
+	defer table.sync.Unlock()
+
+	return append(make([]string, 0), table.neighbors[1:]...)
+}

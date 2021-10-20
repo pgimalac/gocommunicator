@@ -57,7 +57,7 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 			pkt := n.TransportMessageToPacket(*rumor.Msg, rumor.Origin, relay, addr, ttl)
 			err := n.HandlePkt(pkt)
 			if err != nil {
-				log.Warn().Err(err).Msg("")
+				log.Warn().Err(err).Msg("packing the rumor message")
 			}
 			isNew = true
 		}
@@ -95,8 +95,21 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 }
 
 func (n *node) HandleAckMessage(msg types.Message, pkt transport.Packet) error {
-	//TODO
-	return nil
+	addr := n.GetAddress()
+	ack := msg.(*types.AckMessage)
+
+	// check if the ack is expected
+	// and if so signal that an ack was received
+	if ch := n.expectedAcks.GetChannel(ack.AckedPacketID); ch != nil {
+		ch <- struct{}{}
+	}
+
+	ackpkt, err := n.TypeMessageToPacket(ack, pkt.Header.Source, pkt.Header.RelayedBy, addr, 0)
+	if err != nil {
+		log.Warn().Str("by", addr).Err(err).Msg("packing a status message")
+	}
+
+	return n.HandlePkt(ackpkt)
 }
 
 func (n *node) HandleStatusMessage(msg types.Message, pkt transport.Packet) error {

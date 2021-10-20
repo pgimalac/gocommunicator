@@ -21,6 +21,7 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 		conf:         conf,
 		routingTable: NewSafeRoutingTable(conf.Socket.GetAddress()),
 		status:       NewSafeStatusMessage(),
+		expectedAcks: NewSafePacketChanMap(),
 	}
 
 	// register the callback for each message type
@@ -39,18 +40,16 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 // - implements peer.Peer
 type node struct {
 	peer.Peer
-
 	conf peer.Configuration
 
-	rt *Runtime
-
 	routingTable SafeRoutingTable
-
-	sync sync.Mutex
+	status       SafeStatusMessage
+	expectedAcks SafePacketChanMap
 
 	rumorNum uint
 
-	status SafeStatusMessage
+	rt   *Runtime
+	sync sync.Mutex
 }
 
 type Runtime struct {
