@@ -144,11 +144,11 @@ func (table *SafeRoutingTable) GetRandomNeighborBut(but string) (string, error) 
 		return "", errors.New("there is no neighbor")
 	}
 
-	index := rand.Intn(len(table.neighbors) - 1 - is_in)
+	index := rand.Intn(len(table.neighbors)-1-is_in) + 1
 	if is_in == 1 && index >= pos {
-		return table.neighbors[2+index], nil
+		return table.neighbors[1+index], nil
 	}
-	return table.neighbors[1+index], nil
+	return table.neighbors[index], nil
 }
 
 // Returns a copy of the list of neighbors, except ourselves.

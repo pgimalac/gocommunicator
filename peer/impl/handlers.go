@@ -55,6 +55,9 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 
 	for _, rumor := range rumorsmsg.Rumors {
 		if _, ok := n.status.ProcessRumor(rumor); ok {
+			if !n.IsNeighbor(rumor.Origin) {
+				n.SetRoutingEntry(rumor.Origin, pkt.Header.RelayedBy)
+			}
 			pkt := n.TransportMessageToPacket(*rumor.Msg, rumor.Origin, relay, addr, ttl)
 			err := n.HandlePkt(pkt)
 			if err != nil {
@@ -126,6 +129,15 @@ func (n *node) HandleStatusMessage(msg types.Message, pkt transport.Packet) erro
 	sendStatus := false
 	sendRumors := make([]types.Rumor, 0)
 
+	mystatus := n.status.Copy()
+	// Add the peers we have but the other peer doesn't
+	// It makes it easier to find what they lack
+	for peer, _ := range mystatus {
+		if _, ok := status[peer]; !ok {
+			status[peer] = 0
+		}
+	}
+
 	for peer, num := range status {
 		mynum := n.status.GetLastNum(peer)
 
@@ -151,16 +163,15 @@ func (n *node) HandleStatusMessage(msg types.Message, pkt transport.Packet) erro
 		}
 	}
 
-	if !sendStatus && sendRumors == nil && rand.Float64() < n.conf.ContinueMongering {
-		log.Debug().Str("by", addr).Msg("send status to random neighbor")
+	if !sendStatus && len(sendRumors) == 0 && rand.Float64() < n.conf.ContinueMongering {
+		log.Debug().Str("by", addr).Str("but", pkt.Header.Source).Msg("send status to random neighbor")
 		n.SendStatusMessageBut(pkt.Header.Source)
 	}
 
 	return nil
 }
 
-func (n *node) HandleEmptyMessage(msg types.Message, pkt transport.Packet) error {
-	//TODO
+func (*node) HandleEmptyMessage(msg types.Message, pkt transport.Packet) error {
 	return nil
 }
 

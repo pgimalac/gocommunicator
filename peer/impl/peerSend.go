@@ -74,9 +74,27 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 	addr := n.GetAddress()
 	neighbors := n.routingTable.NeighborsCopy()
 	nb := len(neighbors)
+
+	n.sync.Lock()
+	if n.rt == nil {
+		n.sync.Unlock()
+		return
+	}
+	done := n.rt.context.Done()
+	n.sync.Unlock()
+
+	// If there is a timeout, use a real time.Timer
+	// Otherwise, create a channel that will never be used
 	timer := time.NewTimer(n.conf.AckTimeout)
 	if !timer.Stop() {
 		<-timer.C
+	}
+
+	var timerc <-chan time.Time
+	if n.conf.AckTimeout == 0 {
+		timerc = make(chan time.Time)
+	} else {
+		timerc = timer.C
 	}
 
 	recvack := make(chan string)
@@ -102,9 +120,12 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 		log.Debug().Str("by", addr).Str("to", dest).Msg("send rumors message")
 		n.PushSend(sendpkt, dest)
 
-		timer.Reset(n.conf.AckTimeout)
+		if n.conf.AckTimeout != 0 {
+			timer.Reset(n.conf.AckTimeout)
+		}
+
 		select {
-		case <-timer.C:
+		case <-timerc:
 			// timed out...
 			log.Debug().Str("by", addr).Str("expected from", dest).Msg("ack timeout")
 			n.expectedAcks.RemoveChannel(sendpkt.Header.PacketID)
@@ -113,6 +134,8 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 			// ack received !
 			log.Debug().Str("by", addr).Str("from", from).Msg("ack received")
 			n.expectedAcks.RemoveChannel(sendpkt.Header.PacketID)
+			return
+		case <-done:
 			return
 		}
 	}

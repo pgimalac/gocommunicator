@@ -76,7 +76,7 @@ func startLog() {
 
 	if !initialized {
 		zerolog.TimeFieldFormat = time.RFC3339Nano // for increased time precision
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)  // log level
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)  // log level
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: "15:04:05.000"}).
 			With().
 			Timestamp().
@@ -141,7 +141,9 @@ func (n *node) Start() error {
 		queueRec, queueSend, tpRead, tpHandle, tpSend, context, cancel,
 	}
 
-	go n.antiEntropy()
+	done := context.Done()
+	go n.antiEntropy(done)
+	go n.heartbeat(done)
 
 	return nil
 }
@@ -160,7 +162,6 @@ func (n *node) Stop() error {
 	defer n.sync.Unlock()
 
 	if n.rt == nil {
-		n.sync.Unlock()
 		return errors.New("the service is already stopped")
 	}
 
@@ -183,16 +184,8 @@ func (n *node) Stop() error {
 // Otherwise, loops until the end of the node,
 // and sends the node's status to a random neighbor every AntiEntropyInterval
 // If there is no neighbor, nothing happens.
-func (n *node) antiEntropy() {
+func (n *node) antiEntropy(done <-chan struct{}) {
 	if n == nil || n.conf.AntiEntropyInterval == 0 {
-		return
-	}
-
-	n.sync.Lock()
-	rt := n.rt
-	n.sync.Unlock()
-
-	if rt == nil {
 		return
 	}
 
@@ -201,7 +194,29 @@ func (n *node) antiEntropy() {
 		select {
 		case <-tick.C:
 			n.SendStatusMessage()
-		case <-rt.context.Done():
+		case <-done:
+			return
+		}
+	}
+}
+
+func (n *node) heartbeat(done <-chan struct{}) {
+	if n == nil || n.conf.HeartbeatInterval == 0 {
+		return
+	}
+
+	tick := time.NewTicker(n.conf.HeartbeatInterval)
+	for {
+		select {
+		case <-tick.C:
+			msg := types.EmptyMessage{}
+			trmsg, err := n.conf.MessageRegistry.MarshalMessage(msg)
+			if err == nil {
+				n.Broadcast(trmsg)
+			} else {
+				log.Warn().Str("by", n.GetAddress()).Msg("marshalling empty message failed in heartbeat")
+			}
+		case <-done:
 			return
 		}
 	}

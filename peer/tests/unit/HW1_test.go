@@ -770,8 +770,8 @@ func Test_HW1_Messaging_Broadcast_No_Ack(t *testing.T) {
 	require.Len(t, n1Ins, 0)
 
 	// > node1 should have sent one messages: one for sock2 or sock3.
-	n2Outs := node1.GetOuts()
-	require.Len(t, n2Outs, 1)
+	n1Outs := node1.GetOuts()
+	require.Len(t, n1Outs, 1)
 
 	// > node1 should have processed the message locally.
 	status1.CheckCalled(t)
