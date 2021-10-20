@@ -3,7 +3,6 @@ package impl
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -202,19 +201,7 @@ func (n *node) antiEntropy() {
 	for {
 		select {
 		case <-tick.C:
-			dest, err := n.routingTable.GetRandomNeighbor()
-			if err != nil {
-				continue
-			}
-
-			status := n.status.Copy()
-			addr := n.GetAddress()
-			pkt, err := n.TypeMessageToPacket(status, addr, addr, dest, 0)
-			if err != nil {
-				log.Warn().Str("by", addr).Err(err).Msg("anti-entropy mechanism: packing the status message")
-			}
-			log.Debug().Str("by", addr).Str("to", dest).Msg("anti-entropy mechanism: send current status")
-			rt.queueSend.Push(Msg{pkt: pkt, dest: dest})
+			n.SendStatusMessage()
 		case <-rt.context.Done():
 			return
 		}
@@ -232,72 +219,6 @@ func (n *node) GetRelay(dest string) (string, bool) {
 func (n *node) IsNeighbor(dest string) bool {
 	relay, ok := n.GetRelay(dest)
 	return ok && relay == dest
-}
-
-// Unicast implements peer.Messaging
-func (n *node) Unicast(dest string, msg transport.Message) error {
-	log.Info().
-		Str("by", n.GetAddress()).
-		Str("destination", dest).
-		Str("type", msg.Type).
-		Bytes("payload", msg.Payload).
-		Msg("send unicast message")
-
-	relay, exists := n.GetRelay(dest)
-	if !exists {
-		return fmt.Errorf("there is no relay for the address %s", dest)
-	}
-
-	header := transport.NewHeader(n.GetAddress(), n.GetAddress(), dest, 0) // don't care about ttl for now
-
-	pkt := transport.Packet{
-		Header: &header,
-		Msg:    &msg,
-	}
-
-	return n.conf.Socket.Send(relay, pkt, 0) // for now we don't care about the timeout
-}
-
-// Broadcast implements peer.Messaging
-func (n *node) Broadcast(msg transport.Message) error {
-	addr := n.GetAddress()
-	pkt := n.TransportMessageToPacket(msg, addr, addr, addr, 0)
-
-	n.sync.Lock()
-	n.rumorNum += 1
-	rm := types.RumorsMessage{
-		Rumors: []types.Rumor{
-			{
-				Origin:   addr,
-				Msg:      &msg,
-				Sequence: n.rumorNum,
-			},
-		},
-	}
-	n.sync.Unlock()
-
-	// use HandlePkt instead of Registry.ProcessesPacket to have the packet logged as any other handled packet
-	err := n.HandlePkt(pkt)
-	if err != nil {
-		return err
-	}
-
-	dest, err := n.routingTable.GetRandomNeighbor()
-	if err != nil {
-		return nil
-	}
-
-	sendpkt, err := n.TypeMessageToPacket(rm, addr, addr, dest, 0)
-	if err != nil {
-		return err
-	}
-
-	err = n.rt.queueSend.Push(Msg{sendpkt, dest})
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // AddPeer implements peer.Service

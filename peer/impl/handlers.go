@@ -3,6 +3,7 @@ package impl
 // the functions defined in this file handle all kinds of packets
 
 import (
+	"math/rand"
 	"sort"
 
 	"github.com/rs/zerolog/log"
@@ -52,7 +53,7 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 	})
 
 	for _, rumor := range rumorsmsg.Rumors {
-		if _, ok := n.status.IsNext(rumor.Origin, rumor.Sequence); ok {
+		if _, ok := n.status.ProcessRumor(rumor); ok {
 			pkt := n.TransportMessageToPacket(*rumor.Msg, rumor.Origin, relay, addr, ttl)
 			err := n.HandlePkt(pkt)
 			if err != nil {
@@ -73,7 +74,7 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 	// 	//TODO check if we add the peer or return an error ?
 	// 	n.AddPeer(pkt.Header.RelayedBy)
 	// }
-	n.rt.queueSend.Push(Msg{pkt: ackpkt, dest: pkt.Header.RelayedBy})
+	n.PushSend(ackpkt, pkt.Header.RelayedBy)
 
 	if !n.IsNeighbor(pkt.Header.Source) {
 		n.SetRoutingEntry(pkt.Header.Source, pkt.Header.RelayedBy)
@@ -87,7 +88,7 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 		sendpkt := pkt.Copy()
 		sendpkt.Header.RelayedBy = addr
 		sendpkt.Header.Destination = dest
-		n.rt.queueSend.Push(Msg{pkt: sendpkt, dest: dest})
+		n.PushSend(sendpkt, dest)
 	}
 
 	return nil
@@ -99,7 +100,39 @@ func (n *node) HandleAckMessage(msg types.Message, pkt transport.Packet) error {
 }
 
 func (n *node) HandleStatusMessage(msg types.Message, pkt transport.Packet) error {
-	//TODO
+	status := *msg.(*types.StatusMessage)
+	addr := n.GetAddress()
+
+	sendStatus := false
+	sendRumors := make([]types.Rumor, 0)
+
+	for peer, num := range status {
+		mynum := n.status.GetLastNum(peer)
+
+		sendStatus = sendStatus || num > mynum
+		if num < mynum {
+			sendRumors = n.status.AppendRumorsTo(peer, sendRumors, num+1)
+		}
+	}
+
+	if sendStatus {
+		n.SendStatusMessageTo(pkt.Header.Source)
+	}
+
+	if sendRumors != nil {
+		rumors := types.RumorsMessage{Rumors: sendRumors}
+		sendpkt, err := n.TypeMessageToPacket(rumors, addr, addr, pkt.Header.Source, 0)
+		if err != nil {
+			log.Warn().Str("by", addr).Err(err).Msg("packing the rumors message")
+		} else {
+			n.PushSend(sendpkt, pkt.Header.Source)
+		}
+	}
+
+	if !sendStatus && sendRumors == nil && rand.Float64() < n.conf.ContinueMongering {
+		n.SendStatusMessageBut(pkt.Header.Source)
+	}
+
 	return nil
 }
 
