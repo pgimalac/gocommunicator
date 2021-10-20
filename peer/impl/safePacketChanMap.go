@@ -4,16 +4,16 @@ import "sync"
 
 type SafePacketChanMap struct {
 	sync     sync.Mutex
-	channels map[string]chan struct{}
+	channels map[string]chan string
 }
 
 func NewSafePacketChanMap() SafePacketChanMap {
 	return SafePacketChanMap{
-		channels: make(map[string]chan struct{}),
+		channels: make(map[string]chan string),
 	}
 }
 
-func (spcm *SafePacketChanMap) AddChannel(packet string, ch chan struct{}) {
+func (spcm *SafePacketChanMap) AddChannel(packet string, ch chan string) {
 	spcm.sync.Lock()
 	defer spcm.sync.Unlock()
 
@@ -27,7 +27,7 @@ func (spcm *SafePacketChanMap) RemoveChannel(packet string) {
 	delete(spcm.channels, packet)
 }
 
-func (spcm *SafePacketChanMap) GetChannel(packet string) chan struct{} {
+func (spcm *SafePacketChanMap) GetChannel(packet string) chan string {
 	spcm.sync.Lock()
 	defer spcm.sync.Unlock()
 

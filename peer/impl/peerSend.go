@@ -37,7 +37,6 @@ func (n *node) Unicast(dest string, msg transport.Message) error {
 // Broadcast implements peer.Messaging
 func (n *node) Broadcast(msg transport.Message) error {
 	addr := n.GetAddress()
-	pkt := n.TransportMessageToPacket(msg, addr, addr, addr, 0)
 
 	n.sync.Lock()
 	n.rumorNum += 1
@@ -52,8 +51,14 @@ func (n *node) Broadcast(msg transport.Message) error {
 	}
 	n.sync.Unlock()
 
+	pkt, err := n.TypeMessageToPacket(rm, addr, addr, addr, 0)
+	if err != nil {
+		log.Warn().Str("by", addr).Err(err).Msg("packing the rumors message")
+		return err
+	}
+
 	// use HandlePkt instead of Registry.ProcessesPacket to have the packet logged as any other handled packet
-	err := n.HandlePkt(pkt)
+	err = n.HandlePkt(pkt)
 	if err != nil {
 		return err
 	}
@@ -74,7 +79,7 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 		<-timer.C
 	}
 
-	recvack := make(chan struct{})
+	recvack := make(chan string)
 
 	for nb != 0 {
 		// select a random neighbor
@@ -94,16 +99,19 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 		}
 
 		n.expectedAcks.AddChannel(sendpkt.Header.PacketID, recvack)
+		log.Debug().Str("by", addr).Str("to", dest).Msg("send rumors message")
 		n.PushSend(sendpkt, dest)
 
 		timer.Reset(n.conf.AckTimeout)
 		select {
 		case <-timer.C:
 			// timed out...
+			log.Debug().Str("by", addr).Str("expected from", dest).Msg("ack timeout")
 			n.expectedAcks.RemoveChannel(sendpkt.Header.PacketID)
 			//TODO we could defer this removal so that if a peer acks after the timeout we still stop
-		case <-recvack:
+		case from := <-recvack:
 			// ack received !
+			log.Debug().Str("by", addr).Str("from", from).Msg("ack received")
 			n.expectedAcks.RemoveChannel(sendpkt.Header.PacketID)
 			return
 		}
