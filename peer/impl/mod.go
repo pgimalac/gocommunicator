@@ -76,7 +76,7 @@ func startLog() {
 
 	if !initialized {
 		zerolog.TimeFieldFormat = time.RFC3339Nano // for increased time precision
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)  // log level
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)  // log level
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: "15:04:05.000"}).
 			With().
 			Timestamp().
