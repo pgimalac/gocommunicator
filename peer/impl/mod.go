@@ -1,6 +1,7 @@
 package impl
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -56,6 +57,9 @@ type node struct {
 type Runtime struct {
 	queueRec, queueSend      *SafePacketQueue
 	tpRead, tpHandle, tpSend *AutoThreadPool
+
+	context context.Context
+	cancel  context.CancelFunc
 }
 
 type Msg struct {
@@ -133,9 +137,13 @@ func (n *node) Start() error {
 		}
 	}, "send pool", time.Second*5)
 
+	context, cancel := context.WithCancel(context.Background())
+
 	n.rt = &Runtime{
-		queueRec, queueSend, tpRead, tpHandle, tpSend,
+		queueRec, queueSend, tpRead, tpHandle, tpSend, context, cancel,
 	}
+
+	go n.antiEntropy()
 
 	return nil
 }
@@ -165,9 +173,52 @@ func (n *node) Stop() error {
 	n.rt.queueRec.Stop()
 	n.rt.queueSend.Stop()
 
+	n.rt.cancel()
+
 	n.rt = nil
 
 	return nil
+}
+
+// The anti entropy routine.
+// If the AntiEntropyInterval is zero, returns immediately.
+// Otherwise, loops until the end of the node,
+// and sends the node's status to a random neighbor every AntiEntropyInterval
+// If there is no neighbor, nothing happens.
+func (n *node) antiEntropy() {
+	if n == nil || n.conf.AntiEntropyInterval == 0 {
+		return
+	}
+
+	n.sync.Lock()
+	rt := n.rt
+	n.sync.Unlock()
+
+	if rt == nil {
+		return
+	}
+
+	tick := time.NewTicker(n.conf.AntiEntropyInterval)
+	for {
+		select {
+		case <-tick.C:
+			dest, err := n.routingTable.GetRandomNeighbor()
+			if err != nil {
+				continue
+			}
+
+			status := n.status.Copy()
+			addr := n.GetAddress()
+			pkt, err := n.TypeMessageToPacket(status, addr, addr, dest, 0)
+			if err != nil {
+				log.Warn().Str("by", addr).Err(err).Msg("anti-entropy mechanism: packing the status message")
+			}
+			log.Debug().Str("by", addr).Str("to", dest).Msg("anti-entropy mechanism: send current status")
+			rt.queueSend.Push(Msg{pkt: pkt, dest: dest})
+		case <-rt.context.Done():
+			return
+		}
+	}
 }
 
 func (n *node) GetAddress() string {
@@ -225,7 +276,7 @@ func (n *node) Broadcast(msg transport.Message) error {
 	}
 	n.sync.Unlock()
 
-	// use HandlePkt instead of Registry.ProcessesPacket to have the packet logged as any other received packet
+	// use HandlePkt instead of Registry.ProcessesPacket to have the packet logged as any other handled packet
 	err := n.HandlePkt(pkt)
 	if err != nil {
 		return err
@@ -278,32 +329,4 @@ func (n *node) SetRoutingEntry(origin, relayAddr string) {
 	if origin != n.GetAddress() {
 		n.routingTable.SetRoutingEntry(origin, relayAddr)
 	}
-}
-
-// Helper function to get a transport.Message from a types.Message
-func (n *node) TypeToTransportMessage(msg types.Message) (transport.Message, error) {
-	return n.conf.MessageRegistry.MarshalMessage(msg)
-}
-
-// Helper function to get a transport.Packet from a transport.Message and other missing header information
-func (n *node) TransportMessageToPacket(msg transport.Message, source, relay, dest string, ttl uint) transport.Packet {
-	header := transport.NewHeader(source, relay, dest, ttl)
-	return transport.Packet{
-		Header: &header,
-		Msg:    &msg,
-	}
-}
-
-// Helper function to get a transport.Message from a transport.Packet
-func (n *node) PacketToTransportMessage(pkt transport.Packet) transport.Message {
-	return *pkt.Msg
-}
-
-// Helper function to get a transport.Packet from a types.Message and other missing header information
-func (n *node) TypeMessageToPacket(msg types.Message, source, relay, dest string, ttl uint) (transport.Packet, error) {
-	tr, err := n.TypeToTransportMessage(msg)
-	if err != nil {
-		return transport.Packet{}, err
-	}
-	return n.TransportMessageToPacket(tr, source, relay, dest, ttl), nil
 }

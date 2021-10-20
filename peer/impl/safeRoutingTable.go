@@ -119,7 +119,11 @@ func (table *SafeRoutingTable) SetRoutingEntry(dest, relayAddr string) {
 // A neighbor is an address that is not our own address,
 // and whose relay is itself.
 func (table *SafeRoutingTable) GetRandomNeighbor() (string, error) {
-	return table.GetRandomNeighborBut(table.neighbors[0])
+	table.sync.Lock()
+	selfaddr := table.neighbors[0]
+	table.sync.Unlock()
+
+	return table.GetRandomNeighborBut(selfaddr)
 }
 
 // Returns a random neighbor from the routing table, except the given one.
