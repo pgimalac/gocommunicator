@@ -20,7 +20,8 @@ func NewSafeStatusMessage() SafeStatusMessage {
 }
 
 // If the given rumor is the next expected for the given peer, stores it.
-// Returns whether a change was made, and the number of the last packet received.
+// Returns whether a change was made, and the number of the last packet
+// received.
 func (stm *SafeStatusMessage) ProcessRumor(msg types.Rumor) (uint, bool) {
 	peer := msg.Origin
 	val := msg.Sequence
@@ -36,7 +37,8 @@ func (stm *SafeStatusMessage) ProcessRumor(msg types.Rumor) (uint, bool) {
 	return real, false
 }
 
-// Returns the last rumor received for the given peer, or an error if there is none.
+// Returns the last rumor received for the given peer, or an error if there is
+// none.
 func (stm *SafeStatusMessage) GetLast(peer string) (types.Rumor, error) {
 	stm.sync.Lock()
 	defer stm.sync.Unlock()
@@ -48,22 +50,33 @@ func (stm *SafeStatusMessage) GetLast(peer string) (types.Rumor, error) {
 	return rumorList[len(rumorList)-1], nil
 }
 
-// Returns the rumor with the given sequence number for the given peer, or an error if there is none.
-func (stm *SafeStatusMessage) GetRumor(peer string, sequence uint) (types.Rumor, error) {
+// Returns the rumor with the given sequence number for the given peer, or an
+// error if there is none.
+func (stm *SafeStatusMessage) GetRumor(
+	peer string,
+	sequence uint,
+) (types.Rumor, error) {
 	stm.sync.Lock()
 	defer stm.sync.Unlock()
 
 	rumorList := stm.messages[peer]
 	if uint(len(rumorList)) < sequence {
-		return types.Rumor{}, errors.New("sequence number is higher than the number of rumors received from this peer")
+		return types.Rumor{}, errors.New(
+			"sequence number is higher than the number of rumors received from this peer",
+		)
 	}
 
 	return rumorList[sequence-1], nil
 }
 
-// Appends the rumors of the given peer from the given sequence number to the given slice,
+// Appends the rumors of the given peer from the given sequence number to the
+// given slice,
 // and returns the result.
-func (stm *SafeStatusMessage) AppendRumorsTo(peer string, list []types.Rumor, start uint) []types.Rumor {
+func (stm *SafeStatusMessage) AppendRumorsTo(
+	peer string,
+	list []types.Rumor,
+	start uint,
+) []types.Rumor {
 	stm.sync.Lock()
 	defer stm.sync.Unlock()
 
@@ -78,8 +91,10 @@ func (stm *SafeStatusMessage) GetLastNum(peer string) uint {
 	return uint(len(stm.messages[peer]))
 }
 
-// Creates a type.StatusMessage corresponding to the SafeStatusMessage and returns it.
-// The type.StatusMessage is a copy of the state of the SafeStatusMessage at a given time.
+// Creates a type.StatusMessage corresponding to the SafeStatusMessage and
+// returns it.
+// The type.StatusMessage is a copy of the state of the SafeStatusMessage at a
+// given time.
 func (stm *SafeStatusMessage) Copy() types.StatusMessage {
 	stm.sync.Lock()
 	defer stm.sync.Unlock()

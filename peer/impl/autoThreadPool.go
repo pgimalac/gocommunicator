@@ -24,9 +24,11 @@ const timedelta time.Duration = time.Microsecond
 // The features of this thread pool are:
 // - genericity of how Packets are generated, and handled
 // - can specify the core pool size and the max pool size
-// - workers are automatically created when there are too much Packets to process,
+// - workers are automatically created when there are too much Packets to
+// process,
 // and stopped when there are no more packets to process
-// - the thread pool can be stopped, workers will then be stopped in a finite amount of time
+// - the thread pool can be stopped, workers will then be stopped in a finite
+// amount of time
 // and subsequent thread creation will fail
 type AutoThreadPool struct {
 	generator PacketGenerator
@@ -45,7 +47,8 @@ type AutoThreadPool struct {
 }
 
 // Creates a new thread pool with `coreSize` workers, at most `maxSize` workers,
-// the given generator and handler functions, and a given time to live for the workers.
+// the given generator and handler functions, and a given time to live for the
+// workers.
 // If `coreSize` is negative or zero, `coreSize` is set to 1.
 // If `maxSize` is negative or zero, `maxSize` is set to 1.
 // If `maxSize` is smaller than `coreSize`, `maxSize` is changed to `coreSize`.
@@ -116,10 +119,13 @@ func (tp *AutoThreadPool) GetCoreSize() int {
 // The routine executed by workers.
 // A worker
 // - attempts to receive a packet, waiting at most `ttl`
-// - if it doesn't receive one and there are more workers than the core pool size, it stops
+// - if it doesn't receive one and there are more workers than the core pool
+// size, it stops
 // - if it receives one, it handles the packet
-// - after handling a packet, the worker tries to receive one, waiting at most `timedelay`
-// - if it gets one, packets aren't handled fast enough and it tries to create a new worker
+// - after handling a packet, the worker tries to receive one, waiting at most
+// `timedelay`
+// - if it gets one, packets aren't handled fast enough and it tries to create a
+// new worker
 // - if it doesn't get one, it starts over
 func (tp *AutoThreadPool) worker() {
 	log.Debug().Str("pool name", tp.name).
@@ -136,7 +142,8 @@ func (tp *AutoThreadPool) worker() {
 
 		pkt, err := tp.generator(timedelta)
 		if worked && err == nil {
-			// we just finished handling a Packet, and there is already another one waiting to be handled
+			// we just finished handling a Packet, and there is already another
+			// one waiting to be handled
 			// increase the number of workers
 			tp.TrySpawnWorker()
 		}
@@ -157,7 +164,8 @@ func (tp *AutoThreadPool) worker() {
 				}
 				tp.mutex.Unlock()
 			} else if tp.context.Err() != nil {
-				// some errors receiving a Packet could be due to the generator being stopped too
+				// some errors receiving a Packet could be due to the generator
+				// being stopped too
 				tp.mutex.Lock()
 				break
 			} else if !errors.Is(err, StoppedError{}) {
@@ -179,7 +187,10 @@ func (tp *AutoThreadPool) worker() {
 
 	// le mutex has been locked before exiting the loop
 	tp.size--
-	log.Debug().Str("pool name", tp.name).Int("new pool size", tp.size).Msg("stop one worker")
+	log.Debug().
+		Str("pool name", tp.name).
+		Int("new pool size", tp.size).
+		Msg("stop one worker")
 	tp.mutex.Unlock()
 }
 

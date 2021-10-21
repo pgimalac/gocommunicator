@@ -63,7 +63,11 @@ func (s *Socket) Close() error {
 }
 
 // Send implements transport.Socket
-func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) error {
+func (s *Socket) Send(
+	dest string,
+	pkt transport.Packet,
+	timeout time.Duration,
+) error {
 	log.Debug().
 		Str("by", s.GetAddress()).
 		Str("destination", dest).
@@ -79,7 +83,8 @@ func (s *Socket) Send(dest string, pkt transport.Packet, timeout time.Duration) 
 		if err != nil {
 			return err
 		}
-		// removes the deadline at the end of the function to avoid the timeout on future calls
+		// removes the deadline at the end of the function to avoid the timeout
+		// on future calls
 		defer s.sock.SetWriteDeadline(time.Time{})
 	}
 
@@ -133,7 +138,8 @@ func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
 		if err != nil {
 			return transport.Packet{}, err
 		}
-		// removes the deadline at the end of the function to avoid the timeout on future calls
+		// removes the deadline at the end of the function to avoid the timeout
+		// on future calls
 		defer s.sock.SetReadDeadline(time.Time{})
 	}
 

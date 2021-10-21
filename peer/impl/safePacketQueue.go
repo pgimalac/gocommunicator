@@ -39,9 +39,12 @@ func (StoppedError) Error() string {
 }
 
 // The routine executed by the packet handler
-// Waits for packets to be added to the queue, pops them once by one and pushes them in the outgoing channel
-// Stops when the context has been cancelled and after the condition has been broadcasted
-// Since it blocks waiting on the condition, it needs to be woken up if the context is cancelled
+// Waits for packets to be added to the queue, pops them once by one and pushes
+// them in the outgoing channel
+// Stops when the context has been cancelled and after the condition has been
+// broadcasted
+// Since it blocks waiting on the condition, it needs to be woken up if the
+// context is cancelled
 func (queue *SafePacketQueue) packetHandler() {
 	for {
 		queue.mutex.Lock()
@@ -70,7 +73,8 @@ func (queue *SafePacketQueue) packetHandler() {
 		for !sent {
 			select {
 			case queue.out <- pkt:
-				// the routine successfully wrote the packet to the outgoing channel
+				// the routine successfully wrote the packet to the outgoing
+				// channel
 				// we can leave this loop and go wait for another packet
 				sent = true
 			case <-queue.context.Done():
@@ -121,7 +125,8 @@ func (queue *SafePacketQueue) IsEmpty() bool {
 
 // Adds the given elements at the end of the queue.
 // Wakes up the packet handler routine
-// If the queue has been stopped, nothing happens and the packet is silently thrown
+// If the queue has been stopped, nothing happens and the packet is silently
+// thrown
 func (queue *SafePacketQueue) Push(pkt Msg) error {
 	if queue.context.Err() != nil {
 		// the queue has been stopped
@@ -132,7 +137,9 @@ func (queue *SafePacketQueue) Push(pkt Msg) error {
 	defer queue.mutex.Unlock()
 
 	queue.packets = append(queue.packets, pkt)
-	log.Debug().Str("pool name", queue.name).Msg("push one element in the queue")
+	log.Debug().
+		Str("pool name", queue.name).
+		Msg("push one element in the queue")
 
 	queue.cond.Broadcast()
 	return nil
@@ -156,7 +163,9 @@ func (queue *SafePacketQueue) Pop(timeout time.Duration) (Msg, error) {
 		return pkt, nil
 	case <-time.After(timeout):
 		// there was no element available before the timeout
-		log.Debug().Str("pool name", queue.name).Msg("pop one element from the queue")
+		log.Debug().
+			Str("pool name", queue.name).
+			Msg("pop one element from the queue")
 		return Msg{}, transport.TimeoutErr(timeout)
 	case <-queue.context.Done():
 		// the queue has been stopped
@@ -179,7 +188,9 @@ func (queue *SafePacketQueue) Poll() (Msg, error) {
 	select {
 	case pkt := <-queue.out:
 		// we got an element from the outgoing queue
-		log.Debug().Str("pool name", queue.name).Msg("pop one element from the queue")
+		log.Debug().
+			Str("pool name", queue.name).
+			Msg("pop one element from the queue")
 		return pkt, nil
 	default:
 		// there was no element available

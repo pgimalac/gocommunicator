@@ -24,14 +24,23 @@ func (n *node) Unicast(dest string, msg transport.Message) error {
 		return fmt.Errorf("there is no relay for the address %s", dest)
 	}
 
-	header := transport.NewHeader(n.GetAddress(), n.GetAddress(), dest, 0) // don't care about ttl for now
+	header := transport.NewHeader(
+		n.GetAddress(),
+		n.GetAddress(),
+		dest,
+		0,
+	) // don't care about ttl for now
 
 	pkt := transport.Packet{
 		Header: &header,
 		Msg:    &msg,
 	}
 
-	return n.conf.Socket.Send(relay, pkt, 0) // for now we don't care about the timeout
+	return n.conf.Socket.Send(
+		relay,
+		pkt,
+		0,
+	) // for now we don't care about the timeout
 }
 
 // Broadcast implements peer.Messaging
@@ -57,7 +66,8 @@ func (n *node) Broadcast(msg transport.Message) error {
 		return err
 	}
 
-	// use HandlePkt instead of Registry.ProcessesPacket to have the packet logged as any other handled packet
+	// use HandlePkt instead of Registry.ProcessesPacket to have the packet
+	// logged as any other handled packet
 	err = n.HandlePkt(pkt)
 	if err != nil {
 		return err
@@ -68,7 +78,8 @@ func (n *node) Broadcast(msg transport.Message) error {
 	return nil
 }
 
-// The routine that handles sending the RumorsMessage to a random neighbor, in a loop,
+// The routine that handles sending the RumorsMessage to a random neighbor, in a
+// loop,
 // until a neighbor sends an ack
 func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 	addr := n.GetAddress()
@@ -112,7 +123,11 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 
 		sendpkt, err := n.TypeMessageToPacket(msg, addr, addr, dest, 0)
 		if err != nil {
-			log.Warn().Str("by", addr).Str("to", dest).Err(err).Msg("packing the rumors message")
+			log.Warn().
+				Str("by", addr).
+				Str("to", dest).
+				Err(err).
+				Msg("packing the rumors message")
 			continue
 		}
 
@@ -127,9 +142,13 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 		select {
 		case <-timerc:
 			// timed out...
-			log.Debug().Str("by", addr).Str("expected from", dest).Msg("ack timeout")
+			log.Debug().
+				Str("by", addr).
+				Str("expected from", dest).
+				Msg("ack timeout")
 			n.expectedAcks.RemoveChannel(sendpkt.Header.PacketID)
-			//TODO we could defer this removal so that if a peer acks after the timeout we still stop
+			// TODO we could defer this removal so that if a peer acks after the
+			// timeout we still stop
 		case from := <-recvack:
 			// ack received !
 			log.Debug().Str("by", addr).Str("from", from).Msg("ack received")
@@ -178,7 +197,11 @@ func (n *node) SendStatusMessageTo(dest string) error {
 	addr := n.GetAddress()
 	sendpkt, err := n.TypeMessageToPacket(n.status.Copy(), addr, addr, dest, 0)
 	if err != nil {
-		log.Warn().Str("by", addr).Str("to", dest).Err(err).Msg("packing the status message")
+		log.Warn().
+			Str("by", addr).
+			Str("to", dest).
+			Err(err).
+			Msg("packing the status message")
 		return err
 	}
 	log.Debug().Str("by", addr).Str("to", dest).Msg("send current status")

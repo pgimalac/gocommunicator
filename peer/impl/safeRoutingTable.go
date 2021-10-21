@@ -66,10 +66,14 @@ func (table *SafeRoutingTable) removeNeighbor(pos int) {
 	l := len(table.neighbors)
 	addr := table.neighbors[pos]
 
-	table.neighbors[pos] = table.neighbors[l-1] // move the last element to the position of the removed one
-	table.neighbors = table.neighbors[:l-1]     // pop the last element
-	delete(table.positions, addr)               // remove its position
-	table.positions[addr] = pos                 // and update the position map for the former last neighbor
+	// move the last element to the position of the removed one
+	table.neighbors[pos] = table.neighbors[l-1]
+	// pop the last element
+	table.neighbors = table.neighbors[:l-1]
+	// remove its position
+	delete(table.positions, addr)
+	// and update the position map for the former last neighbor
+	table.positions[addr] = pos
 }
 
 // Adds the given address in the neighbor list.
@@ -129,7 +133,9 @@ func (table *SafeRoutingTable) GetRandomNeighbor() (string, error) {
 // Returns a random neighbor from the routing table, except the given one.
 // A neighbor is an address that is not our own address,
 // and whose relay is itself.
-func (table *SafeRoutingTable) GetRandomNeighborBut(but string) (string, error) {
+func (table *SafeRoutingTable) GetRandomNeighborBut(
+	but string,
+) (string, error) {
 	table.sync.Lock()
 	defer table.sync.Unlock()
 

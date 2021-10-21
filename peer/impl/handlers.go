@@ -30,15 +30,25 @@ func (n *node) HandlePkt(pkt transport.Packet) error {
 	}
 
 	pkt.Header.RelayedBy = addr
-	return n.conf.Socket.Send(pkt.Header.Destination, pkt, 0) // for now we don't care about the timeout
+	return n.conf.Socket.Send(
+		pkt.Header.Destination,
+		pkt,
+		0,
+	) // for now we don't care about the timeout
 }
 
-func (n *node) HandleChatmessage(msg types.Message, pkt transport.Packet) error {
+func (n *node) HandleChatmessage(
+	msg types.Message,
+	pkt transport.Packet,
+) error {
 	// already logged when received
 	return nil
 }
 
-func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) error {
+func (n *node) HandleRumorsMessage(
+	msg types.Message,
+	pkt transport.Packet,
+) error {
 	addr := n.GetAddress()
 	log.Debug().Str("by", addr).Msg("handle rumors message")
 
@@ -48,7 +58,8 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 	rumorsmsg := msg.(*types.RumorsMessage)
 	isNew := false
 
-	// Sort the rumors by their sequence number, so that dont ignore X+1 then read X
+	// Sort the rumors by their sequence number, so that dont ignore X+1 then
+	// read X
 	sort.Slice(rumorsmsg.Rumors, func(i, j int) bool {
 		return rumorsmsg.Rumors[i].Sequence < rumorsmsg.Rumors[j].Sequence
 	})
@@ -58,7 +69,13 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 			if !n.IsNeighbor(rumor.Origin) {
 				n.SetRoutingEntry(rumor.Origin, pkt.Header.RelayedBy)
 			}
-			pkt := n.TransportMessageToPacket(*rumor.Msg, rumor.Origin, relay, addr, ttl)
+			pkt := n.TransportMessageToPacket(
+				*rumor.Msg,
+				rumor.Origin,
+				relay,
+				addr,
+				ttl,
+			)
 			err := n.HandlePkt(pkt)
 			if err != nil {
 				log.Warn().Err(err).Msg("packing the rumor message")
@@ -71,8 +88,17 @@ func (n *node) HandleRumorsMessage(msg types.Message, pkt transport.Packet) erro
 		return nil
 	}
 
-	ack := types.AckMessage{AckedPacketID: pkt.Header.PacketID, Status: n.status.Copy()}
-	ackpkt, err := n.TypeMessageToPacket(ack, addr, addr, pkt.Header.RelayedBy, 0)
+	ack := types.AckMessage{
+		AckedPacketID: pkt.Header.PacketID,
+		Status:        n.status.Copy(),
+	}
+	ackpkt, err := n.TypeMessageToPacket(
+		ack,
+		addr,
+		addr,
+		pkt.Header.RelayedBy,
+		0,
+	)
 	if err != nil {
 		return err
 	}
@@ -113,7 +139,13 @@ func (n *node) HandleAckMessage(msg types.Message, pkt transport.Packet) error {
 		ch <- pkt.Header.Source
 	}
 
-	statusPkt, err := n.TypeMessageToPacket(ack.Status, pkt.Header.Source, pkt.Header.RelayedBy, addr, 0)
+	statusPkt, err := n.TypeMessageToPacket(
+		ack.Status,
+		pkt.Header.Source,
+		pkt.Header.RelayedBy,
+		addr,
+		0,
+	)
 	if err != nil {
 		log.Warn().Str("by", addr).Err(err).Msg("packing a status message")
 	}
@@ -121,7 +153,10 @@ func (n *node) HandleAckMessage(msg types.Message, pkt transport.Packet) error {
 	return n.HandlePkt(statusPkt)
 }
 
-func (n *node) HandleStatusMessage(msg types.Message, pkt transport.Packet) error {
+func (n *node) HandleStatusMessage(
+	msg types.Message,
+	pkt transport.Packet,
+) error {
 	status := *msg.(*types.StatusMessage)
 	addr := n.GetAddress()
 	log.Debug().Str("by", addr).Msg("handle status message")
@@ -143,28 +178,48 @@ func (n *node) HandleStatusMessage(msg types.Message, pkt transport.Packet) erro
 
 		sendStatus = sendStatus || num > mynum
 		if num < mynum {
-			log.Debug().Str("by", addr).Str("from", peer).Str("to", pkt.Header.Source).Msg("sending packets")
+			log.Debug().
+				Str("by", addr).
+				Str("from", peer).
+				Str("to", pkt.Header.Source).
+				Msg("sending packets")
 			sendRumors = n.status.AppendRumorsTo(peer, sendRumors, num+1)
 		}
 	}
 
 	if sendStatus {
-		log.Debug().Str("by", addr).Str("to", pkt.Header.Source).Msg("send status to request missing")
+		log.Debug().
+			Str("by", addr).
+			Str("to", pkt.Header.Source).
+			Msg("send status to request missing")
 		n.SendStatusMessageTo(pkt.Header.Source)
 	}
 
 	if len(sendRumors) > 0 {
 		rumors := types.RumorsMessage{Rumors: sendRumors}
-		sendpkt, err := n.TypeMessageToPacket(rumors, addr, addr, pkt.Header.Source, 0)
+		sendpkt, err := n.TypeMessageToPacket(
+			rumors,
+			addr,
+			addr,
+			pkt.Header.Source,
+			0,
+		)
 		if err != nil {
-			log.Warn().Str("by", addr).Err(err).Msg("packing the rumors message")
+			log.Warn().
+				Str("by", addr).
+				Err(err).
+				Msg("packing the rumors message")
 		} else {
 			n.PushSend(sendpkt, pkt.Header.Source)
 		}
 	}
 
-	if !sendStatus && len(sendRumors) == 0 && rand.Float64() < n.conf.ContinueMongering {
-		log.Debug().Str("by", addr).Str("but", pkt.Header.Source).Msg("send status to random neighbor")
+	if !sendStatus && len(sendRumors) == 0 &&
+		rand.Float64() < n.conf.ContinueMongering {
+		log.Debug().
+			Str("by", addr).
+			Str("but", pkt.Header.Source).
+			Msg("send status to random neighbor")
 		n.SendStatusMessageBut(pkt.Header.Source)
 	}
 
@@ -175,11 +230,20 @@ func (*node) HandleEmptyMessage(msg types.Message, pkt transport.Packet) error {
 	return nil
 }
 
-func (n *node) HandlePrivateMessage(msg types.Message, pkt transport.Packet) error {
+func (n *node) HandlePrivateMessage(
+	msg types.Message,
+	pkt transport.Packet,
+) error {
 	priv := msg.(*types.PrivateMessage)
 
 	if _, ok := priv.Recipients[n.GetAddress()]; ok {
-		pkt := n.TransportMessageToPacket(*priv.Msg, pkt.Header.Source, pkt.Header.RelayedBy, n.GetAddress(), 0)
+		pkt := n.TransportMessageToPacket(
+			*priv.Msg,
+			pkt.Header.Source,
+			pkt.Header.RelayedBy,
+			n.GetAddress(),
+			0,
+		)
 		n.HandlePkt(pkt)
 	}
 

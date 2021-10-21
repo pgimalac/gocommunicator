@@ -25,12 +25,30 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 	}
 
 	// register the callback for each message type
-	conf.MessageRegistry.RegisterMessageCallback(types.ChatMessage{}, n.HandleChatmessage)
-	conf.MessageRegistry.RegisterMessageCallback(types.RumorsMessage{}, n.HandleRumorsMessage)
-	conf.MessageRegistry.RegisterMessageCallback(types.AckMessage{}, n.HandleAckMessage)
-	conf.MessageRegistry.RegisterMessageCallback(types.StatusMessage{}, n.HandleStatusMessage)
-	conf.MessageRegistry.RegisterMessageCallback(types.EmptyMessage{}, n.HandleEmptyMessage)
-	conf.MessageRegistry.RegisterMessageCallback(types.PrivateMessage{}, n.HandlePrivateMessage)
+	conf.MessageRegistry.RegisterMessageCallback(
+		types.ChatMessage{},
+		n.HandleChatmessage,
+	)
+	conf.MessageRegistry.RegisterMessageCallback(
+		types.RumorsMessage{},
+		n.HandleRumorsMessage,
+	)
+	conf.MessageRegistry.RegisterMessageCallback(
+		types.AckMessage{},
+		n.HandleAckMessage,
+	)
+	conf.MessageRegistry.RegisterMessageCallback(
+		types.StatusMessage{},
+		n.HandleStatusMessage,
+	)
+	conf.MessageRegistry.RegisterMessageCallback(
+		types.EmptyMessage{},
+		n.HandleEmptyMessage,
+	)
+	conf.MessageRegistry.RegisterMessageCallback(
+		types.PrivateMessage{},
+		n.HandlePrivateMessage,
+	)
 
 	return &n
 }
@@ -77,10 +95,16 @@ func startLog() {
 	if !initialized {
 		zerolog.TimeFieldFormat = time.RFC3339Nano // for increased time precision
 		zerolog.SetGlobalLevel(zerolog.WarnLevel)  // log level
-		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: "15:04:05.000"}).
+		log.Logger = log.Output(
+			zerolog.ConsoleWriter{
+				Out:        os.Stderr,
+				TimeFormat: "15:04:05.000",
+			}).
 			With().
 			Timestamp().
-			//Caller(). // Displays the name of the file and the line where the log was called
+			// Displays the name of the file and the line where the log was
+			// called
+			// Caller().
 			Logger()
 
 		initialized = true
@@ -115,14 +139,28 @@ func (n *node) Start() error {
 
 	// the read thread pool
 	// reads Packets from the socket and adds them to queueRec
-	tpRead := NewAutoThreadPool(2, 1e6, func(timeout time.Duration) (Msg, error) {
-		pkt, err := n.conf.Socket.Recv(timeout)
-		return Msg{pkt, ""}, err
-	}, queueRec.Push, "read pool", time.Second*5)
+	tpRead := NewAutoThreadPool(
+		2,
+		1e6,
+		func(timeout time.Duration) (Msg, error) {
+			pkt, err := n.conf.Socket.Recv(timeout)
+			return Msg{pkt, ""}, err
+		},
+		queueRec.Push,
+		"read pool",
+		time.Second*5,
+	)
 
 	// the handle thread pool
 	// handles received packets, and possibly adds packets to send to queueSend
-	tpHandle := NewAutoThreadPool(5, 1e6, queueRec.Pop, n.HandleMsg, "handle pool", time.Second*5)
+	tpHandle := NewAutoThreadPool(
+		5,
+		1e6,
+		queueRec.Pop,
+		n.HandleMsg,
+		"handle pool",
+		time.Second*5,
+	)
 
 	// the send thread pool
 	// sends Packets from queueSend
@@ -179,7 +217,7 @@ func (n *node) Stop() error {
 	return nil
 }
 
-// The anti entropy routine.
+// The anti-entropy routine.
 // If the AntiEntropyInterval is zero, returns immediately.
 // Otherwise, loops until the end of the node,
 // and sends the node's status to a random neighbor every AntiEntropyInterval
@@ -200,6 +238,7 @@ func (n *node) antiEntropy(done <-chan struct{}) {
 	}
 }
 
+// The heartbeat routine
 func (n *node) heartbeat(done <-chan struct{}) {
 	if n == nil || n.conf.HeartbeatInterval == 0 {
 		return
