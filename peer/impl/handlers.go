@@ -133,11 +133,8 @@ func (n *node) HandleAckMessage(msg types.Message, pkt transport.Packet) error {
 	ack := msg.(*types.AckMessage)
 	log.Debug().Str("by", addr).Msg("handle ack message")
 
-	// check if the ack is expected
-	// and if so signal that an ack was received
-	if ch := n.expectedAcks.GetChannel(ack.AckedPacketID); ch != nil {
-		ch <- pkt.Header.Source
-	}
+	// signal that an ack was received
+	n.expectedAcks.Notify(pkt.Header.PacketID, pkt.Header.Source)
 
 	statusPkt, err := n.TypeMessageToPacket(
 		ack.Status,
@@ -247,5 +244,37 @@ func (n *node) HandlePrivateMessage(
 		n.HandlePkt(pkt)
 	}
 
+	return nil
+}
+
+func (n *node) HandleDataRequestMessage(
+	msg types.Message,
+	pkt transport.Packet,
+) error {
+	//TODO
+	return nil
+}
+
+func (n *node) HandleDataReplyMessage(
+	msg types.Message,
+	pkt transport.Packet,
+) error {
+	//TODO
+	return nil
+}
+
+func (n *node) HandleSearchRequestMessage(
+	msg types.Message,
+	pkt transport.Packet,
+) error {
+	//TODO
+	return nil
+}
+
+func (n *node) HandleSearchReplyMessage(
+	msg types.Message,
+	pkt transport.Packet,
+) error {
+	//TODO
 	return nil
 }

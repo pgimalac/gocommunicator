@@ -109,6 +109,12 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 	}
 
 	recvack := make(chan string)
+	// the list of packeds id we sent containing the rumors
+	sent := make([]string, 0)
+	// remove the packed id added to the map at the end
+	defer func() {
+		n.expectedAcks.RemoveChannel(sent...)
+	}()
 
 	for nb != 0 {
 		// select a random neighbor
@@ -131,8 +137,9 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 			continue
 		}
 
-		n.expectedAcks.AddChannel(sendpkt.Header.PacketID, recvack)
 		log.Debug().Str("by", addr).Str("to", dest).Msg("send rumors message")
+		n.expectedAcks.AddChannel(sendpkt.Header.PacketID, recvack)
+		sent = append(sent, sendpkt.Header.PacketID)
 		n.PushSend(sendpkt, dest)
 
 		if n.conf.AckTimeout != 0 {
@@ -146,13 +153,9 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 				Str("by", addr).
 				Str("expected from", dest).
 				Msg("ack timeout")
-			n.expectedAcks.RemoveChannel(sendpkt.Header.PacketID)
-			// TODO we could defer this removal so that if a peer acks after the
-			// timeout we still stop
 		case from := <-recvack:
 			// ack received !
 			log.Debug().Str("by", addr).Str("from", from).Msg("ack received")
-			n.expectedAcks.RemoveChannel(sendpkt.Header.PacketID)
 			return
 		case <-done:
 			return

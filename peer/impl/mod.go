@@ -21,7 +21,7 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 		conf:         conf,
 		routingTable: NewSafeRoutingTable(conf.Socket.GetAddress()),
 		status:       NewSafeStatusMessage(),
-		expectedAcks: NewSafePacketChanMap(),
+		expectedAcks: NewSafeAsyncNotifier(),
 	}
 
 	// register the callback for each message type
@@ -49,6 +49,22 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 		types.PrivateMessage{},
 		n.HandlePrivateMessage,
 	)
+	conf.MessageRegistry.RegisterMessageCallback(
+		types.DataRequestMessage{},
+		n.HandleDataRequestMessage,
+	)
+	conf.MessageRegistry.RegisterMessageCallback(
+		types.DataReplyMessage{},
+		n.HandleDataReplyMessage,
+	)
+	conf.MessageRegistry.RegisterMessageCallback(
+		types.SearchRequestMessage{},
+		n.HandleSearchRequestMessage,
+	)
+	conf.MessageRegistry.RegisterMessageCallback(
+		types.SearchReplyMessage{},
+		n.HandleSearchReplyMessage,
+	)
 
 	return &n
 }
@@ -62,7 +78,7 @@ type node struct {
 
 	routingTable SafeRoutingTable
 	status       SafeStatusMessage
-	expectedAcks SafePacketChanMap
+	expectedAcks SafeAsyncNotifier
 
 	rumorNum uint
 

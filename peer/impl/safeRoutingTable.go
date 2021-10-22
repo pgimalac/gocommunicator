@@ -22,17 +22,10 @@ type SafeRoutingTable struct {
 
 // creates a new empty SafeRoutingTable
 func NewSafeRoutingTable(address string) SafeRoutingTable {
-	table := make(peer.RoutingTable)
-	neighbors := []string{address}
-
-	positions := make(map[string]int)
-	positions[address] = 0
-	table[address] = address
-
 	return SafeRoutingTable{
-		table:     table,
-		neighbors: neighbors,
-		positions: positions,
+		table:     map[string]string{address: address},
+		neighbors: []string{address},
+		positions: map[string]int{address: 0},
 	}
 }
 
