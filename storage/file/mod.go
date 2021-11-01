@@ -43,9 +43,8 @@ func NewPersistency(folderPath string) (storage.Storage, error) {
 //
 // - implements storage.Storage
 type Storage struct {
-	blob       storage.Store
-	naming     storage.Store
-	blockchain storage.Store
+	blob   storage.Store
+	naming storage.Store
 }
 
 // GetDataBlobStore implements storage.Storage

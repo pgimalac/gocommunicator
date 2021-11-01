@@ -1027,7 +1027,7 @@ func Test_HW2_SearchAll_Remote_Budget(t *testing.T) {
 	defer node4.Stop()
 
 	node5 := z.NewTestNode(t, peerFac, transp, "127.0.0.1:0")
-	defer node4.Stop()
+	defer node5.Stop()
 
 	// A <-> B
 	node1.AddPeer(node2.GetAddr())
