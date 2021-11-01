@@ -22,6 +22,7 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 		routingTable: NewSafeRoutingTable(conf.Socket.GetAddress()),
 		status:       NewSafeStatusMessage(),
 		expectedAcks: NewSafeAsyncNotifier(),
+		catalog:      NewSafeCatalog(),
 	}
 
 	// register the callback for each message type
@@ -79,6 +80,7 @@ type node struct {
 	routingTable SafeRoutingTable
 	status       SafeStatusMessage
 	expectedAcks SafeAsyncNotifier
+	catalog      SafeCatalog
 
 	rumorNum uint
 

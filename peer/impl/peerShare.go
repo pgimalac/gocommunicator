@@ -17,8 +17,6 @@ func copySlice(sl []byte) []byte {
 	return cpy
 }
 
-// Upload stores a new data blob on the peer and will make it available to
-// other peers. The blob will be split into chunks.
 func (n *node) Upload(data io.Reader) (string, error) {
 	buff := make([]byte, n.conf.ChunkSize)
 	h := crypto.SHA256.New()
@@ -93,18 +91,12 @@ func (n *node) Resolve(name string) string {
 	return ""
 }
 
-// GetCatalog returns the peer's catalog. See below for the definition of a
-// catalog.
 func (n *node) GetCatalog() peer.Catalog {
-	//TODO
-	return nil
+	return n.catalog.Copy()
 }
 
-// UpdateCatalog tells the peer about a piece of data referenced by 'key'
-// being available on other peers. It should update the peer's catalog. See
-// below for the definition of a catalog.
 func (n *node) UpdateCatalog(key string, peer string) {
-	//TODO
+	n.catalog.Put(key, peer)
 }
 
 // SearchAll returns all the names that exist matching the given regex. It
