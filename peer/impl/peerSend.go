@@ -79,8 +79,7 @@ func (n *node) Broadcast(msg transport.Message) error {
 }
 
 // The routine that handles sending the RumorsMessage to a random neighbor, in a
-// loop,
-// until a neighbor sends an ack
+// loop, until a neighbor sends an ack
 func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 	addr := n.GetAddress()
 	neighbors := n.routingTable.NeighborsCopy()
