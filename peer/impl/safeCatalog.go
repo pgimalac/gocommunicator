@@ -43,3 +43,29 @@ func (sc *SafeCatalog) Copy() peer.Catalog {
 
 	return cpy
 }
+
+func (sc *SafeCatalog) Get(key string) []string {
+	sc.sync.Lock()
+	defer sc.sync.Unlock()
+
+	set, ok := sc.catalog[key]
+	if !ok {
+		return []string{}
+	}
+
+	dests := make([]string, len(set))
+	for key := range set {
+		dests = append(dests, key)
+	}
+	return dests
+}
+
+func (sc *SafeCatalog) Remove(key, addr string) {
+	sc.sync.Lock()
+	defer sc.sync.Unlock()
+
+	set, ok := sc.catalog[key]
+	if ok {
+		delete(set, addr)
+	}
+}

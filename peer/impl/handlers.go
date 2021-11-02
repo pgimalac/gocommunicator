@@ -259,7 +259,12 @@ func (n *node) HandleDataReplyMessage(
 	msg types.Message,
 	pkt transport.Packet,
 ) error {
-	//TODO
+	rep := msg.(*types.DataReplyMessage)
+	if rep.Value != nil && len(rep.Value) != 0 {
+		n.conf.Storage.GetDataBlobStore().Set(rep.Key, rep.Value)
+		n.expectedAcks.Notify(rep.Key, pkt.Header.Source)
+	}
+
 	return nil
 }
 

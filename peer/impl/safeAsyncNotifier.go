@@ -8,6 +8,10 @@ import "sync"
 type SafeAsyncNotifier struct {
 	sync     sync.Mutex
 	channels map[string]chan string
+	//NOTE:
+	// possible change: use chan []byte
+	// more versatile, allows to return an address or a chunk
+	// not really necessary for now but maybe useful later
 }
 
 // Creates a new empty SafeAsyncNotifier.
@@ -36,13 +40,21 @@ func (spcm *SafeAsyncNotifier) RemoveChannel(keys ...string) {
 }
 
 // Writes to the channel associated with the given key.
+// Returns whether the value was successfully written.
+// Returns false if there is no such key or if the underlying channel is full.
 func (spcm *SafeAsyncNotifier) Notify(key, value string) bool {
 	spcm.sync.Lock()
 	defer spcm.sync.Unlock()
 
 	ch, ok := spcm.channels[key]
-	if ok {
-		ch <- value
+	if !ok {
+		return false
 	}
-	return ok
+
+	select {
+	case ch <- value:
+		return true
+	default:
+		return false
+	}
 }

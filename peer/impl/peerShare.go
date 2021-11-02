@@ -3,12 +3,16 @@ package impl
 import (
 	"crypto"
 	"encoding/hex"
+	"errors"
 	"io"
+	"math/rand"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/rs/xid"
 	"go.dedis.ch/cs438/peer"
+	"go.dedis.ch/cs438/types"
 )
 
 func copySlice(sl []byte) []byte {
@@ -69,13 +73,127 @@ func (n *node) Upload(data io.Reader) (string, error) {
 	return metafileKey, nil
 }
 
-// Download will get all the necessary chunks corresponding to the given
-// metahash that references a blob, and return a reconstructed blob. The
-// peer will save locally the chunks that it doesn't have for further
-// sharing. Returns an error if it can't get the necessary chunks.
+// Concatenates the chunks of the given file
+// and returns the original file
+// If the metahash is unknown or any chunk is missing,
+// returns an error
+func (n *node) getFile(metahash string) ([]byte, error) {
+	file := make([]byte, 0)
+	dataBlobStore := n.conf.Storage.GetDataBlobStore()
+	metafileValue := dataBlobStore.Get(metahash)
+	if metafileValue == nil {
+		return nil, errors.New("unknown metahash")
+	}
+
+	chunksHashes := strings.Split(string(metafileValue), peer.MetafileSep)
+	for _, chunkHash := range chunksHashes {
+		chunk := dataBlobStore.Get(chunkHash)
+		if chunk == nil {
+			return nil, errors.New("there is a missing chunk")
+		}
+
+		file = append(file, chunk...)
+	}
+	return file, nil
+}
+
+// Requests the given chunk from the given peer.
+// Uses an exponential backoff, with parameters from the config.
+// If the peer sends back the chunk, returns the chunk, otherwise an error.
+// The possibles causes of error are:
+// - the packet cannot be created
+// - there is no relay for the given destination peer
+// - the peer doesn't have the chunk (the peer is then removed from the catalog)
+// - the node is stopped
+// - the backoff expires
+func (n *node) requestChunk(dest, hash string) ([]byte, error) {
+	addr := n.GetAddress()
+	id := xid.New().String()
+	msg := types.DataRequestMessage{
+		RequestID: id,
+		Key:       hash,
+	}
+
+	recvack := make(chan string)
+	n.expectedAcks.AddChannel(id, recvack)
+	defer n.expectedAcks.RemoveChannel(id)
+
+	pkt, err := n.TypeMessageToPacket(msg, addr, addr, dest, 0)
+	if err != nil {
+		return nil, err
+	}
+	relay, ok := n.routingTable.GetRelay(dest)
+	if !ok {
+		return nil, errors.New("no way to reach the peer")
+	}
+
+	done := n.rt.context.Done()
+	backoff := n.conf.BackoffDataRequest.Initial
+	for try := uint(0); try <= n.conf.BackoffDataRequest.Retry; try++ {
+		n.PushSend(pkt, relay)
+		timer := time.NewTimer(backoff)
+		select {
+		case <-timer.C:
+			// timed out...
+		case <-recvack:
+			// ack received !
+			// check if the chunk was added
+			chunk := n.conf.Storage.GetDataBlobStore().Get(hash)
+			if chunk == nil {
+				// shouldn't happen but you never know
+				n.catalog.Remove(hash, dest)
+				return nil, errors.New("the peer doesn't have the chunk")
+			}
+			return chunk, nil
+		case <-done:
+			return nil, StoppedError{}
+		}
+		backoff *= time.Duration(n.conf.BackoffDataRequest.Factor)
+	}
+
+	return nil, errors.New("chunk request backoff expired")
+}
+
 func (n *node) Download(metahash string) ([]byte, error) {
-	//TODO
-	return nil, nil
+	// check if the file is not already available in storage
+	file, err := n.getFile(string(metahash))
+	if err == nil {
+		return file, nil
+	}
+
+	dests := n.catalog.Get(metahash)
+	if len(dests) == 0 {
+		return nil, errors.New("unknown file")
+	}
+	destpos := rand.Intn(len(dests))
+	//TODO possible optimization: change destination when timeout
+	// or use several in parallel
+	dest := dests[destpos]
+
+	dataBlobStore := n.conf.Storage.GetDataBlobStore()
+	file = make([]byte, 0)
+	metafileValue := dataBlobStore.Get(metahash)
+	if metafileValue == nil {
+		metafileValue, err = n.requestChunk(dest, metahash)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	chunksHashes := strings.Split(string(metafileValue), peer.MetafileSep)
+	for _, chunkHash := range chunksHashes {
+		chunk := dataBlobStore.Get(chunkHash)
+		if chunk == nil {
+			chunk, err = n.requestChunk(dest, chunkHash)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		file = append(file, chunk...)
+	}
+
+	return file, nil
 }
 
 // Tag creates a mapping between a (file)name and a metahash.
