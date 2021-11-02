@@ -3,6 +3,7 @@ package impl
 // the functions defined in this file handle all kinds of packets
 
 import (
+	"errors"
 	"math/rand"
 	"sort"
 
@@ -251,7 +252,33 @@ func (n *node) HandleDataRequestMessage(
 	msg types.Message,
 	pkt transport.Packet,
 ) error {
-	//TODO
+	addr := n.GetAddress()
+	req := msg.(*types.DataRequestMessage)
+	value := n.conf.Storage.GetDataBlobStore().Get(req.Key)
+
+	log.Debug().
+		Str("by", n.GetAddress()).
+		Str("key", req.Key).
+		Bool("chunk known", value != nil).
+		Msg("handle request message")
+
+	rep := types.DataReplyMessage{
+		RequestID: req.RequestID,
+		Key:       req.Key,
+		Value:     value,
+	}
+	repPkt, err := n.TypeMessageToPacket(rep, addr, addr, pkt.Header.Source, 0)
+	if err != nil {
+		return err
+	}
+
+	relay, ok := n.routingTable.GetRelay(pkt.Header.Source)
+	if !ok {
+		return errors.New("cannot send message to " + pkt.Header.Source)
+	}
+
+	n.PushSend(repPkt, relay)
+
 	return nil
 }
 
@@ -269,7 +296,7 @@ func (n *node) HandleDataReplyMessage(
 
 	if containsChunk {
 		n.conf.Storage.GetDataBlobStore().Set(rep.Key, rep.Value)
-		n.expectedAcks.Notify(rep.Key, pkt.Header.Source)
+		n.expectedAcks.Notify(rep.RequestID, pkt.Header.Source)
 	}
 
 	return nil

@@ -112,7 +112,7 @@ func startLog() {
 
 	if !initialized {
 		zerolog.TimeFieldFormat = time.RFC3339Nano // for increased time precision
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)  // log level
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)  // log level
 		log.Logger = log.Output(
 			zerolog.ConsoleWriter{
 				Out:        os.Stderr,
