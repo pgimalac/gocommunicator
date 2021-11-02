@@ -11,17 +11,19 @@ import (
 	"time"
 
 	"github.com/rs/xid"
+	"github.com/rs/zerolog/log"
 	"go.dedis.ch/cs438/peer"
 	"go.dedis.ch/cs438/types"
 )
 
+// Allocates and returns a copy of the given slice.
 func copySlice(sl []byte) []byte {
-	cpy := make([]byte, len(sl))
-	copy(cpy, sl)
-	return cpy
+	return append(make([]byte, 0, len(sl)), sl...)
 }
 
 func (n *node) Upload(data io.Reader) (string, error) {
+	addr := n.GetAddress()
+
 	buff := make([]byte, n.conf.ChunkSize)
 	h := crypto.SHA256.New()
 	dataBlobStore := n.conf.Storage.GetDataBlobStore()
@@ -55,6 +57,8 @@ func (n *node) Upload(data io.Reader) (string, error) {
 			metafileKeyBuff = append(metafileKeyBuff, chunkHash...)
 
 			dataBlobStore.Set(chunkStrHash, copySlice(buff[:len]))
+			log.Debug().Str("by", addr).Bytes("chunk hash", chunkHash).Msg("add chunk to data blob store")
+
 			metafileValue += chunkStrHash
 			metafileValue += peer.MetafileSep
 			h.Reset()
@@ -70,6 +74,8 @@ func (n *node) Upload(data io.Reader) (string, error) {
 	}
 	metafileKey := hex.EncodeToString(h.Sum(nil))
 	dataBlobStore.Set(metafileKey, copySlice([]byte(metafileValue)))
+	log.Info().Str("by", addr).Str("metafile key", metafileKey).Msg("upload data")
+
 	return metafileKey, nil
 }
 
@@ -77,8 +83,18 @@ func (n *node) Upload(data io.Reader) (string, error) {
 // and returns the original file
 // If the metahash is unknown or any chunk is missing,
 // returns an error
-func (n *node) getFile(metahash string) ([]byte, error) {
-	file := make([]byte, 0)
+func (n *node) getFile(metahash string) (file []byte, err error) {
+	addr := n.GetAddress()
+	defer func() {
+		// log the return status of this call
+		log.Debug().
+			Str("by", addr).
+			Str("metahash", metahash).
+			Bool("success", err != nil).
+			Msg("get file from local storage")
+	}()
+
+	file = make([]byte, 0)
 	dataBlobStore := n.conf.Storage.GetDataBlobStore()
 	metafileValue := dataBlobStore.Get(metahash)
 	if metafileValue == nil {
@@ -108,15 +124,17 @@ func (n *node) getFile(metahash string) ([]byte, error) {
 // - the backoff expires
 func (n *node) requestChunk(dest, hash string) ([]byte, error) {
 	addr := n.GetAddress()
+	log.Info().
+		Str("by", addr).
+		Str("destination", dest).
+		Str("metahash / chunk hash", hash).
+		Msg("request chunk from peer")
+
 	id := xid.New().String()
 	msg := types.DataRequestMessage{
 		RequestID: id,
 		Key:       hash,
 	}
-
-	recvack := make(chan string)
-	n.expectedAcks.AddChannel(id, recvack)
-	defer n.expectedAcks.RemoveChannel(id)
 
 	pkt, err := n.TypeMessageToPacket(msg, addr, addr, dest, 0)
 	if err != nil {
@@ -127,9 +145,20 @@ func (n *node) requestChunk(dest, hash string) ([]byte, error) {
 		return nil, errors.New("no way to reach the peer")
 	}
 
+	recvack := make(chan string)
+	n.expectedAcks.AddChannel(id, recvack)
+	defer n.expectedAcks.RemoveChannel(id)
+
 	done := n.rt.context.Done()
 	backoff := n.conf.BackoffDataRequest.Initial
 	for try := uint(0); try <= n.conf.BackoffDataRequest.Retry; try++ {
+		log.Debug().
+			Str("by", addr).
+			Dur("backoff", backoff).
+			Str("destination", dest).
+			Str("metahash / chunk hash", hash).
+			Msg("request chunk from peer")
+
 		n.PushSend(pkt, relay)
 		timer := time.NewTimer(backoff)
 		select {
@@ -155,6 +184,12 @@ func (n *node) requestChunk(dest, hash string) ([]byte, error) {
 }
 
 func (n *node) Download(metahash string) ([]byte, error) {
+	addr := n.GetAddress()
+	log.Info().
+		Str("by", addr).
+		Str("metahash", metahash).
+		Msg("download")
+
 	// check if the file is not already available in storage
 	file, err := n.getFile(string(metahash))
 	if err == nil {
@@ -171,7 +206,6 @@ func (n *node) Download(metahash string) ([]byte, error) {
 	dest := dests[destpos]
 
 	dataBlobStore := n.conf.Storage.GetDataBlobStore()
-	file = make([]byte, 0)
 	metafileValue := dataBlobStore.Get(metahash)
 	if metafileValue == nil {
 		metafileValue, err = n.requestChunk(dest, metahash)
@@ -181,6 +215,7 @@ func (n *node) Download(metahash string) ([]byte, error) {
 	}
 
 	chunksHashes := strings.Split(string(metafileValue), peer.MetafileSep)
+	file = make([]byte, 0, len(chunksHashes)*int(n.conf.ChunkSize))
 	for _, chunkHash := range chunksHashes {
 		chunk := dataBlobStore.Get(chunkHash)
 		if chunk == nil {
@@ -214,6 +249,12 @@ func (n *node) GetCatalog() peer.Catalog {
 }
 
 func (n *node) UpdateCatalog(key string, peer string) {
+	log.Debug().
+		Str("by", n.GetAddress()).
+		Str("file metahash", key).
+		Str("peer", peer).
+		Msg("update catalog")
+
 	n.catalog.Put(key, peer)
 }
 

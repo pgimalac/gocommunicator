@@ -155,5 +155,6 @@ func (table *SafeRoutingTable) NeighborsCopy() []string {
 	table.sync.Lock()
 	defer table.sync.Unlock()
 
-	return append(make([]string, 0), table.neighbors[1:]...)
+	neighbors := table.neighbors[1:]
+	return append(make([]string, 0, len(neighbors)), neighbors...)
 }

@@ -260,7 +260,14 @@ func (n *node) HandleDataReplyMessage(
 	pkt transport.Packet,
 ) error {
 	rep := msg.(*types.DataReplyMessage)
-	if rep.Value != nil && len(rep.Value) != 0 {
+	containsChunk := rep.Value != nil && len(rep.Value) != 0
+	log.Debug().
+		Str("by", n.GetAddress()).
+		Str("key", rep.Key).
+		Bool("contains value", containsChunk).
+		Msg("handle status message")
+
+	if containsChunk {
 		n.conf.Storage.GetDataBlobStore().Set(rep.Key, rep.Value)
 		n.expectedAcks.Notify(rep.Key, pkt.Header.Source)
 	}
