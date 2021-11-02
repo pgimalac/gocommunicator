@@ -21,11 +21,20 @@ func copySlice(sl []byte) []byte {
 	return append(make([]byte, 0, len(sl)), sl...)
 }
 
+func ChunkEncode(chunk []byte) ([]byte, error) {
+	h := crypto.SHA256.New()
+	_, err := h.Write(chunk)
+	if err != nil {
+		return nil, err
+	}
+
+	return h.Sum(nil), nil
+}
+
 func (n *node) Upload(data io.Reader) (string, error) {
 	addr := n.GetAddress()
 
 	buff := make([]byte, n.conf.ChunkSize)
-	h := crypto.SHA256.New()
 	dataBlobStore := n.conf.Storage.GetDataBlobStore()
 
 	var len uint = 0
@@ -47,12 +56,11 @@ func (n *node) Upload(data io.Reader) (string, error) {
 
 		len += uint(sz)
 		if len != 0 && (len == n.conf.ChunkSize || err != nil) {
-			_, wrerr := h.Write(buff[:len])
-			if wrerr != nil {
-				return "", wrerr
+			chunkHash, err := ChunkEncode(buff[:len])
+			if err != nil {
+				return "", err
 			}
 
-			chunkHash := h.Sum(nil)
 			chunkStrHash := hex.EncodeToString(chunkHash)
 			metafileKeyBuff = append(metafileKeyBuff, chunkHash...)
 
@@ -61,18 +69,17 @@ func (n *node) Upload(data io.Reader) (string, error) {
 
 			metafileValue += chunkStrHash
 			metafileValue += peer.MetafileSep
-			h.Reset()
 			len = 0
 		}
 	}
 
 	// Remove the separator at the end (if there is one)
 	metafileValue = strings.TrimSuffix(metafileValue, peer.MetafileSep)
-	_, wrerr := h.Write(metafileKeyBuff)
-	if wrerr != nil {
-		return "", wrerr
+	metafileHash, err := ChunkEncode(metafileKeyBuff)
+	if err != nil {
+		return "", err
 	}
-	metafileKey := hex.EncodeToString(h.Sum(nil))
+	metafileKey := hex.EncodeToString(metafileHash)
 	dataBlobStore.Set(metafileKey, copySlice([]byte(metafileValue)))
 	log.Info().Str("by", addr).Str("metafile key", metafileKey).Msg("upload data")
 
@@ -258,15 +265,72 @@ func (n *node) UpdateCatalog(key string, peer string) {
 	n.catalog.Put(key, peer)
 }
 
+func fullRegexp(reg regexp.Regexp) regexp.Regexp {
+	return *regexp.MustCompile("^" + reg.String() + "$")
+}
+
 // SearchAll returns all the names that exist matching the given regex. It
 // merges results from the local storage and from the search request reply
 // sent to a random neighbor using the provided budget. It makes the peer
 // update its catalog and name storage according to the SearchReplyMessages
 // received. Returns an empty result if nothing found. An error is returned
 // in case of an exceptional event.
-func (n *node) SearchAll(reg regexp.Regexp, budget uint, timeout time.Duration) (names []string, err error) {
-	//TODO
-	return nil, nil
+func (n *node) SearchAll(reg regexp.Regexp, budget uint, timeout time.Duration) ([]string, error) {
+	addr := n.GetAddress()
+
+	neighbors := n.routingTable.NeighborsCopy()
+	size := uint(len(neighbors))
+	for size > budget {
+		pos := rand.Intn(int(size))
+		neighbors[pos] = neighbors[pos-1]
+		neighbors = neighbors[:size-1]
+		size--
+	}
+
+	ch := make(chan string, size)
+	id := xid.New().String()
+	n.expectedAcks.AddChannel(id, ch)
+	defer n.expectedAcks.RemoveChannel(id)
+
+	for pos, peer := range neighbors {
+		qte := budget / size
+		if uint(pos) < (budget % size) {
+			qte++
+		}
+		msg := types.SearchRequestMessage{
+			RequestID: id,
+			Origin:    addr,
+			Pattern:   reg.String(),
+			Budget:    qte,
+		}
+
+		pkt, err := n.TypeMessageToPacket(msg, addr, addr, peer, 0)
+		if err != nil {
+			log.Warn().Err(err).Msg("search all: creating packet from request message")
+		} else {
+			n.PushSend(pkt, peer)
+		}
+	}
+
+	timer := time.NewTicker(timeout)
+	for pos := uint(0); pos < size; pos++ {
+		select {
+		case <-ch:
+		case <-timer.C:
+			pos = size // break outer loop
+		}
+	}
+
+	reg = fullRegexp(reg)
+	names := make([]string, 0)
+	n.conf.Storage.GetNamingStore().ForEach(func(key string, val []byte) bool {
+		if reg.MatchString(key) {
+			names = append(names, key)
+		}
+		return true
+	})
+
+	return names, nil
 }
 
 // SearchFirst uses an expanding ring configuration and returns a name as

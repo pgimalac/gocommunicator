@@ -31,11 +31,20 @@ func (n *node) HandlePkt(pkt transport.Packet) error {
 	}
 
 	pkt.Header.RelayedBy = addr
-	return n.conf.Socket.Send(
-		pkt.Header.Destination,
-		pkt,
-		0,
-	) // for now we don't care about the timeout
+	if pkt.Header.TTL == 1 {
+		return nil
+	}
+	if pkt.Header.TTL != 1 {
+		pkt.Header.TTL--
+	}
+
+	relay, ok := n.routingTable.GetRelay(pkt.Header.Destination)
+	if !ok {
+		return errors.New("cannot relay the packet: no relay for the given destination")
+	}
+
+	n.PushSend(pkt, relay)
+	return nil
 }
 
 func (n *node) HandleChatmessage(
@@ -59,8 +68,8 @@ func (n *node) HandleRumorsMessage(
 	rumorsmsg := msg.(*types.RumorsMessage)
 	isNew := false
 
-	// Sort the rumors by their sequence number, so that dont ignore X+1 then
-	// read X
+	// Sort the rumors by their sequence number, so that we dont ignore X+1
+	// and then read X
 	sort.Slice(rumorsmsg.Rumors, func(i, j int) bool {
 		return rumorsmsg.Rumors[i].Sequence < rumorsmsg.Rumors[j].Sequence
 	})
@@ -314,6 +323,27 @@ func (n *node) HandleSearchReplyMessage(
 	msg types.Message,
 	pkt transport.Packet,
 ) error {
-	//TODO
+	rep := msg.(*types.SearchReplyMessage)
+	addr := n.GetAddress()
+	log.Debug().
+		Str("by", addr).
+		Str("request id", rep.RequestID).
+		Int("number of match", len(rep.Responses)).
+		Msg("search reply message")
+
+	dataBlobStore := n.conf.Storage.GetDataBlobStore()
+	for _, info := range rep.Responses {
+		n.conf.Storage.GetNamingStore().Set(info.Name, []byte(info.Metahash))
+		for _, chunk := range info.Chunks {
+			if chunk != nil {
+				chunkHash, err := ChunkEncode(chunk)
+				if err == nil {
+					dataBlobStore.Set(string(chunkHash), chunk)
+				}
+			}
+		}
+	}
+	n.expectedAcks.Notify(rep.RequestID, addr)
+
 	return nil
 }
