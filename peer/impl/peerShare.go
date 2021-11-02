@@ -231,17 +231,17 @@ func (n *node) Download(metahash string) ([]byte, error) {
 	return file, nil
 }
 
-// Tag creates a mapping between a (file)name and a metahash.
 func (n *node) Tag(name string, mh string) error {
-	//TODO
+	n.conf.Storage.GetNamingStore().Set(name, []byte(mh))
 	return nil
 }
 
-// Resolve returns the corresponding metahash of a given (file)name. Returns
-// an empty string if not found.
 func (n *node) Resolve(name string) string {
-	//TODO
-	return ""
+	mh := n.conf.Storage.GetNamingStore().Get(name)
+	if mh == nil {
+		return ""
+	}
+	return string(mh)
 }
 
 func (n *node) GetCatalog() peer.Catalog {
