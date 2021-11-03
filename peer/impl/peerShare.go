@@ -265,9 +265,10 @@ func (n *node) UpdateCatalog(key string, peer string) {
 	n.catalog.Put(key, peer)
 }
 
-func fullRegexp(reg regexp.Regexp) regexp.Regexp {
-	return *regexp.MustCompile("^" + reg.String() + "$")
-}
+//TODO check if we're supposed to match the whole name or not.
+// func fullRegexp(reg regexp.Regexp) regexp.Regexp {
+// 	return *regexp.MustCompile("^" + reg.String() + "$")
+// }
 
 // SearchAll returns all the names that exist matching the given regex. It
 // merges results from the local storage and from the search request reply
@@ -277,51 +278,46 @@ func fullRegexp(reg regexp.Regexp) regexp.Regexp {
 // in case of an exceptional event.
 func (n *node) SearchAll(reg regexp.Regexp, budget uint, timeout time.Duration) ([]string, error) {
 	addr := n.GetAddress()
+	dests := n.routingTable.GetRandomNeighbors(budget)
 
-	neighbors := n.routingTable.NeighborsCopy()
-	size := uint(len(neighbors))
-	for size > budget {
-		pos := rand.Intn(int(size))
-		neighbors[pos] = neighbors[pos-1]
-		neighbors = neighbors[:size-1]
-		size--
-	}
-
-	ch := make(chan string, size)
+	ch := make(chan string, budget)
 	id := xid.New().String()
+	n.requestIds.Add(id)
 	n.expectedAcks.AddChannel(id, ch)
 	defer n.expectedAcks.RemoveChannel(id)
 
-	for pos, peer := range neighbors {
-		qte := budget / size
-		if uint(pos) < (budget % size) {
-			qte++
-		}
-		msg := types.SearchRequestMessage{
-			RequestID: id,
-			Origin:    addr,
-			Pattern:   reg.String(),
-			Budget:    qte,
-		}
-
-		pkt, err := n.TypeMessageToPacket(msg, addr, addr, peer, 0)
-		if err != nil {
-			log.Warn().Err(err).Msg("search all: creating packet from request message")
-		} else {
-			n.PushSend(pkt, peer)
-		}
+	n.SendRequestMessage(dests, addr, id, reg.String(), budget)
+	destset := make(map[string]struct{})
+	for _, dest := range dests {
+		destset[dest] = struct{}{}
 	}
 
 	timer := time.NewTicker(timeout)
-	for pos := uint(0); pos < size; pos++ {
-		select {
-		case <-ch:
-		case <-timer.C:
-			pos = size // break outer loop
-		}
-	}
+	//TODO check if we're supposed to
+	// - wait for size replies, or timeout
+	// - wait for budget replies, or timeout
+	// - wait for the timeout only
 
-	reg = fullRegexp(reg)
+	// size := uint(len(dests))
+	// for pos := uint(0); pos < size; pos++ {
+	// 	select {
+	// 	case addr := <-ch:
+	// 		delete(destset, addr)
+	// 		if len(destset) != 0 {
+	// 			// we're still expecting some answers
+	// 			continue
+	// 		}
+	// 	case <-timer.C:
+	// 	}
+
+	// 	// either we have received everything we were waiting for
+	// 	// or we timed out
+	// 	break
+	// }
+	<-timer.C
+
+	//TODO check if we're supposed to match the whole name or not
+	// reg = fullRegexp(reg)
 	names := make([]string, 0)
 	n.conf.Storage.GetNamingStore().ForEach(func(key string, val []byte) bool {
 		if reg.MatchString(key) {

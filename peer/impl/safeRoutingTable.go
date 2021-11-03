@@ -150,6 +150,43 @@ func (table *SafeRoutingTable) GetRandomNeighborBut(
 	return table.neighbors[index], nil
 }
 
+func (table *SafeRoutingTable) GetRandomNeighbors(n uint) []string {
+	table.sync.Lock()
+	addr := table.neighbors[0]
+	table.sync.Unlock()
+
+	return table.GetRandomNeighborsBut(addr, n)
+}
+
+// Returns a slice with n randomly selected neighbors, except the given one.
+// If n is greater than the number of remaining neighbors,
+// returns all remaining neighbors
+func (table *SafeRoutingTable) GetRandomNeighborsBut(but string, n uint) []string {
+	neighbors := table.NeighborsCopy()
+	size := uint(len(neighbors))
+
+	// a position of 0 means but is the peer's address
+	// which has already been removed from neighbors by NeighborsCopy
+	pos, ok := table.positions[but]
+	if ok && pos != 0 {
+		// since neighbors doesn't contain the peer's address
+		// the position is shifted by one
+		neighbors[pos-1] = neighbors[size-1]
+		size--
+		neighbors = neighbors[:size]
+	}
+
+	// Remove neighbors until there is at most n left
+	for size > n {
+		pos := rand.Intn(int(size))
+		size--
+		neighbors[pos] = neighbors[size]
+		neighbors = neighbors[:size]
+	}
+
+	return neighbors
+}
+
 // Returns a copy of the list of neighbors, except ourselves.
 func (table *SafeRoutingTable) NeighborsCopy() []string {
 	table.sync.Lock()

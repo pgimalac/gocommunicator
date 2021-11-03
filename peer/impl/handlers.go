@@ -5,9 +5,12 @@ package impl
 import (
 	"errors"
 	"math/rand"
+	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/rs/zerolog/log"
+	"go.dedis.ch/cs438/peer"
 	"go.dedis.ch/cs438/transport"
 	"go.dedis.ch/cs438/types"
 )
@@ -269,7 +272,7 @@ func (n *node) HandleDataRequestMessage(
 		Str("by", n.GetAddress()).
 		Str("key", req.Key).
 		Bool("chunk known", value != nil).
-		Msg("handle request message")
+		Msg("handle data request message")
 
 	rep := types.DataReplyMessage{
 		RequestID: req.RequestID,
@@ -283,7 +286,7 @@ func (n *node) HandleDataRequestMessage(
 
 	relay, ok := n.routingTable.GetRelay(pkt.Header.Source)
 	if !ok {
-		return errors.New("cannot send message to " + pkt.Header.Source)
+		return errors.New("cannot send message to " + pkt.Header.Source + ", no known relay")
 	}
 
 	n.PushSend(repPkt, relay)
@@ -301,7 +304,7 @@ func (n *node) HandleDataReplyMessage(
 		Str("by", n.GetAddress()).
 		Str("key", rep.Key).
 		Bool("contains value", containsChunk).
-		Msg("handle status message")
+		Msg("handle data reply message")
 
 	if containsChunk {
 		n.conf.Storage.GetDataBlobStore().Set(rep.Key, rep.Value)
@@ -311,11 +314,80 @@ func (n *node) HandleDataReplyMessage(
 	return nil
 }
 
+// Returns a FileInfo struct for with the given name and metahash.
+// The hash is given (while it could be retrieved from the NamingStore)
+// to avoid a deadlock, since this function is called from NamingStore.forEach
+func (n *node) getFileInfo(name string, hash string) (types.FileInfo, bool) {
+	dataBlobStore := n.conf.Storage.GetDataBlobStore()
+	metahash := dataBlobStore.Get(hash)
+	if metahash == nil {
+		return types.FileInfo{}, false
+	}
+	chunkHashes := strings.Split(string(metahash), peer.MetafileSep)
+	chunks := make([][]byte, len(chunkHashes))
+	for pos, chunkHash := range chunkHashes {
+		if dataBlobStore.Get(chunkHash) != nil {
+			chunks[pos] = []byte(chunkHash)
+		}
+	}
+
+	return types.FileInfo{
+		Name:     name,
+		Metahash: hash,
+		Chunks:   chunks,
+	}, true
+}
+
 func (n *node) HandleSearchRequestMessage(
 	msg types.Message,
 	pkt transport.Packet,
 ) error {
-	//TODO
+	req := msg.(*types.SearchRequestMessage)
+	addr := n.GetAddress()
+	log.Info().
+		Str("by", addr).
+		Str("request id", req.RequestID).
+		Str("origin", req.Origin).
+		Str("pattern", req.Pattern).
+		Uint("budget", req.Budget).
+		Msg("handle search request message")
+
+	if n.requestIds.Add(req.RequestID) {
+		// the request was already processed before
+		return nil
+	}
+
+	req.Budget--
+	if req.Budget != 0 {
+		dests := n.routingTable.GetRandomNeighborsBut(req.Origin, req.Budget)
+		n.SendRequestMessage(dests, req.Origin, req.RequestID, req.Pattern, req.Budget)
+	}
+
+	regexp := regexp.MustCompile(req.Pattern)
+	responses := make([]types.FileInfo, 0)
+	n.conf.Storage.GetNamingStore().ForEach(func(key string, val []byte) bool {
+		if regexp.MatchString(key) {
+			fileInfo, ok := n.getFileInfo(key, string(val))
+			if ok {
+				responses = append(responses, fileInfo)
+			}
+		}
+		return true
+	})
+
+	reqmsg := types.SearchReplyMessage{
+		RequestID: req.RequestID,
+		Responses: responses,
+	}
+
+	//TODO check if we answer directly to req.Origin or pkt.RelayBy
+	// or using routing table ?
+	reqpkt, err := n.TypeMessageToPacket(reqmsg, addr, addr, req.Origin, 0)
+	if err != nil {
+		return err
+	}
+	n.PushSend(reqpkt, pkt.Header.RelayedBy)
+
 	return nil
 }
 
@@ -325,21 +397,19 @@ func (n *node) HandleSearchReplyMessage(
 ) error {
 	rep := msg.(*types.SearchReplyMessage)
 	addr := n.GetAddress()
-	log.Debug().
+	log.Info().
 		Str("by", addr).
 		Str("request id", rep.RequestID).
 		Int("number of match", len(rep.Responses)).
-		Msg("search reply message")
+		Msg("handle search reply message")
 
-	dataBlobStore := n.conf.Storage.GetDataBlobStore()
+	// dataBlobStore := n.conf.Storage.GetDataBlobStore()
 	for _, info := range rep.Responses {
 		n.conf.Storage.GetNamingStore().Set(info.Name, []byte(info.Metahash))
+		n.catalog.Put(string(info.Metahash), pkt.Header.Source)
 		for _, chunk := range info.Chunks {
 			if chunk != nil {
-				chunkHash, err := ChunkEncode(chunk)
-				if err == nil {
-					dataBlobStore.Set(string(chunkHash), chunk)
-				}
+				n.catalog.Put(string(chunk), pkt.Header.Source)
 			}
 		}
 	}

@@ -210,3 +210,27 @@ func (n *node) SendStatusMessageTo(dest string) error {
 	n.PushSend(sendpkt, dest)
 	return nil
 }
+
+func (n *node) SendRequestMessage(dests []string, origin, id, regexp string, budget uint) {
+	size := uint(len(dests))
+	addr := n.GetAddress()
+	for pos, peer := range dests {
+		qte := budget / size
+		if uint(pos) < (budget % size) {
+			qte++
+		}
+		msg := types.SearchRequestMessage{
+			RequestID: id,
+			Origin:    origin,
+			Pattern:   regexp,
+			Budget:    qte,
+		}
+
+		pkt, err := n.TypeMessageToPacket(msg, addr, addr, peer, 0)
+		if err != nil {
+			log.Warn().Err(err).Msg("search all: creating packet from request message")
+		} else {
+			n.PushSend(pkt, peer)
+		}
+	}
+}
