@@ -2,27 +2,24 @@ package impl
 
 import "sync"
 
-// A safe map from string to channel string.
+// A safe map from string to a generic channel.
 // Used to map a key id to a channel,
-// on which a routine is waiting for an ack.
+// on which a routine is waiting for something
+// (an ack, a reply, etc)
 type SafeAsyncNotifier struct {
 	sync     sync.Mutex
-	channels map[string]chan string
-	//NOTE:
-	// possible change: use chan []byte
-	// more versatile, allows to return an address or a chunk
-	// not really necessary for now but maybe useful later
+	channels map[string]chan interface{}
 }
 
 // Creates a new empty SafeAsyncNotifier.
 func NewSafeAsyncNotifier() SafeAsyncNotifier {
 	return SafeAsyncNotifier{
-		channels: make(map[string]chan string),
+		channels: make(map[string]chan interface{}),
 	}
 }
 
 // Adds the given key and channel to the map.
-func (spcm *SafeAsyncNotifier) AddChannel(key string, ch chan string) {
+func (spcm *SafeAsyncNotifier) AddChannel(key string, ch chan interface{}) {
 	spcm.sync.Lock()
 	defer spcm.sync.Unlock()
 
@@ -42,7 +39,7 @@ func (spcm *SafeAsyncNotifier) RemoveChannel(keys ...string) {
 // Writes to the channel associated with the given key.
 // Returns whether the value was successfully written.
 // Returns false if there is no such key or if the underlying channel is full.
-func (spcm *SafeAsyncNotifier) Notify(key, value string) bool {
+func (spcm *SafeAsyncNotifier) Notify(key string, value interface{}) bool {
 	spcm.sync.Lock()
 	defer spcm.sync.Unlock()
 

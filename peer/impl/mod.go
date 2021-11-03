@@ -18,12 +18,12 @@ import (
 // function but you MUST NOT change its signature and package location.
 func NewPeer(conf peer.Configuration) peer.Peer {
 	n := node{
-		conf:         conf,
-		routingTable: NewSafeRoutingTable(conf.Socket.GetAddress()),
-		status:       NewSafeStatusMessage(),
-		expectedAcks: NewSafeAsyncNotifier(),
-		catalog:      NewSafeCatalog(),
-		requestIds:   NewSafeSet(),
+		conf:          conf,
+		routingTable:  NewSafeRoutingTable(conf.Socket.GetAddress()),
+		status:        NewSafeStatusMessage(),
+		asyncNotifier: NewSafeAsyncNotifier(),
+		catalog:       NewSafeCatalog(),
+		requestIds:    NewSafeSet(),
 	}
 
 	// register the callback for each message type
@@ -78,11 +78,11 @@ type node struct {
 	peer.Peer
 	conf peer.Configuration
 
-	routingTable SafeRoutingTable
-	status       SafeStatusMessage
-	expectedAcks SafeAsyncNotifier
-	catalog      SafeCatalog
-	requestIds   SafeSet
+	routingTable  SafeRoutingTable
+	status        SafeStatusMessage
+	asyncNotifier SafeAsyncNotifier
+	catalog       SafeCatalog
+	requestIds    SafeSet
 
 	rumorNum uint
 

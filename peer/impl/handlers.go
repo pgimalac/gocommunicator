@@ -147,7 +147,7 @@ func (n *node) HandleAckMessage(msg types.Message, pkt transport.Packet) error {
 	log.Debug().Str("by", addr).Msg("handle ack message")
 
 	// signal that an ack was received
-	n.expectedAcks.Notify(pkt.Header.PacketID, pkt.Header.Source)
+	n.asyncNotifier.Notify(pkt.Header.PacketID, pkt.Header.Source)
 
 	statusPkt, err := n.TypeMessageToPacket(
 		ack.Status,
@@ -308,7 +308,7 @@ func (n *node) HandleDataReplyMessage(
 
 	if containsChunk {
 		n.conf.Storage.GetDataBlobStore().Set(rep.Key, rep.Value)
-		n.expectedAcks.Notify(rep.RequestID, pkt.Header.Source)
+		n.asyncNotifier.Notify(rep.RequestID, pkt.Header.Source)
 	}
 
 	return nil
@@ -360,7 +360,7 @@ func (n *node) HandleSearchRequestMessage(
 	req.Budget--
 	if req.Budget != 0 {
 		dests := n.routingTable.GetRandomNeighborsBut(req.Origin, req.Budget)
-		n.SendRequestMessage(dests, req.Origin, req.RequestID, req.Pattern, req.Budget)
+		n.SendSearchRequestMessage(dests, req.Origin, req.RequestID, req.Pattern, req.Budget)
 	}
 
 	regexp := regexp.MustCompile(req.Pattern)
@@ -413,7 +413,7 @@ func (n *node) HandleSearchReplyMessage(
 			}
 		}
 	}
-	n.expectedAcks.Notify(rep.RequestID, addr)
+	n.asyncNotifier.Notify(rep.RequestID, rep)
 
 	return nil
 }

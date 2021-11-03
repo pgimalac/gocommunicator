@@ -107,12 +107,12 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 		timerc = timer.C
 	}
 
-	recvack := make(chan string)
+	recvack := make(chan interface{})
 	// the list of packeds id we sent containing the rumors
 	sent := make([]string, 0)
 	// remove the packed id added to the map at the end
 	defer func() {
-		n.expectedAcks.RemoveChannel(sent...)
+		n.asyncNotifier.RemoveChannel(sent...)
 	}()
 
 	for nb != 0 {
@@ -137,7 +137,7 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 		}
 
 		log.Debug().Str("by", addr).Str("to", dest).Msg("send rumors message")
-		n.expectedAcks.AddChannel(sendpkt.Header.PacketID, recvack)
+		n.asyncNotifier.AddChannel(sendpkt.Header.PacketID, recvack)
 		sent = append(sent, sendpkt.Header.PacketID)
 		n.PushSend(sendpkt, dest)
 
@@ -154,7 +154,7 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 				Msg("ack timeout")
 		case from := <-recvack:
 			// ack received !
-			log.Debug().Str("by", addr).Str("from", from).Msg("ack received")
+			log.Debug().Str("by", addr).Str("from", from.(string)).Msg("ack received")
 			return
 		case <-done:
 			return
@@ -211,7 +211,7 @@ func (n *node) SendStatusMessageTo(dest string) error {
 	return nil
 }
 
-func (n *node) SendRequestMessage(dests []string, origin, id, regexp string, budget uint) {
+func (n *node) SendSearchRequestMessage(dests []string, origin, id, regexp string, budget uint) {
 	size := uint(len(dests))
 	addr := n.GetAddress()
 	for pos, peer := range dests {

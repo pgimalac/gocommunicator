@@ -152,9 +152,9 @@ func (n *node) requestChunk(dest, hash string) ([]byte, error) {
 		return nil, errors.New("no way to reach the peer")
 	}
 
-	recvack := make(chan string)
-	n.expectedAcks.AddChannel(id, recvack)
-	defer n.expectedAcks.RemoveChannel(id)
+	recvack := make(chan interface{})
+	n.asyncNotifier.AddChannel(id, recvack)
+	defer n.asyncNotifier.RemoveChannel(id)
 
 	done := n.rt.context.Done()
 	backoff := n.conf.BackoffDataRequest.Initial
@@ -270,23 +270,17 @@ func (n *node) UpdateCatalog(key string, peer string) {
 // 	return *regexp.MustCompile("^" + reg.String() + "$")
 // }
 
-// SearchAll returns all the names that exist matching the given regex. It
-// merges results from the local storage and from the search request reply
-// sent to a random neighbor using the provided budget. It makes the peer
-// update its catalog and name storage according to the SearchReplyMessages
-// received. Returns an empty result if nothing found. An error is returned
-// in case of an exceptional event.
 func (n *node) SearchAll(reg regexp.Regexp, budget uint, timeout time.Duration) ([]string, error) {
 	addr := n.GetAddress()
 	dests := n.routingTable.GetRandomNeighbors(budget)
 
-	ch := make(chan string, budget)
+	// ch := make(chan string, budget)
 	id := xid.New().String()
 	n.requestIds.Add(id)
-	n.expectedAcks.AddChannel(id, ch)
-	defer n.expectedAcks.RemoveChannel(id)
+	// n.expectedAcks.AddChannel(id, ch)
+	// defer n.expectedAcks.RemoveChannel(id)
 
-	n.SendRequestMessage(dests, addr, id, reg.String(), budget)
+	n.SendSearchRequestMessage(dests, addr, id, reg.String(), budget)
 	destset := make(map[string]struct{})
 	for _, dest := range dests {
 		destset[dest] = struct{}{}
@@ -329,12 +323,65 @@ func (n *node) SearchAll(reg regexp.Regexp, budget uint, timeout time.Duration) 
 	return names, nil
 }
 
-// SearchFirst uses an expanding ring configuration and returns a name as
-// soon as it finds a peer that "fully matches" a data blob. It makes the
-// peer update its catalog and name storage according to the
-// SearchReplyMessages received. Returns an empty string if nothing was
-// found.
-func (n *node) SearchFirst(pattern regexp.Regexp, conf peer.ExpandingRing) (name string, err error) {
-	//TODO
+func (n *node) SearchFirst(pattern regexp.Regexp, conf peer.ExpandingRing) (string, error) {
+	addr := n.GetAddress()
+	match := ""
+	n.conf.Storage.GetNamingStore().ForEach(func(key string, val []byte) bool {
+		if !pattern.MatchString(key) {
+			return true
+		}
+
+		_, err := n.getFile(string(val))
+		if err == nil {
+			match = key
+			return false
+		}
+		return true
+	})
+
+	if match != "" {
+		return match, nil
+	}
+
+	budget := conf.Initial
+	ch := make(chan interface{})
+	ids := make([]string, 0)
+	defer func() {
+		n.asyncNotifier.RemoveChannel(ids...)
+	}()
+
+	for try := uint(0); try < conf.Retry; try++ {
+		timer := time.NewTimer(conf.Timeout)
+		id := xid.New().String()
+		ids = append(ids, id)
+		n.asyncNotifier.AddChannel(id, ch)
+		dests := n.routingTable.GetRandomNeighbors(budget)
+		n.SendSearchRequestMessage(dests, addr, id, pattern.String(), budget)
+		for {
+			select {
+			case msg := <-ch:
+				rep := *msg.(*types.SearchReplyMessage)
+				for _, fileinfo := range rep.Responses {
+					fullfile := true
+					for _, chunk := range fileinfo.Chunks {
+						if chunk == nil {
+							fullfile = false
+							break
+						}
+					}
+					if fullfile {
+						return fileinfo.Name, nil
+					}
+				}
+				continue
+			case <-timer.C:
+			}
+			// timeout
+			break
+		}
+
+		budget *= conf.Factor
+	}
+
 	return "", nil
 }
