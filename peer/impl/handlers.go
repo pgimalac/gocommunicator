@@ -70,13 +70,16 @@ func (n *node) HandleRumorsMessage(
 	pkt transport.Packet,
 ) error {
 	addr := n.GetAddress()
-	log.Info().Str("by", addr).Msg("handle rumors message")
-
 	relay := pkt.Header.RelayedBy
 	ttl := pkt.Header.TTL
 
 	rumorsmsg := msg.(*types.RumorsMessage)
 	isNew := false
+
+	log.Info().
+		Str("by", addr).
+		Str("relayed by", pkt.Header.RelayedBy).
+		Msg("handle rumors message")
 
 	// Sort the rumors by their sequence number, so that we dont ignore X+1
 	// and then read X
@@ -86,6 +89,14 @@ func (n *node) HandleRumorsMessage(
 
 	for _, rumor := range rumorsmsg.Rumors {
 		if _, ok := n.status.ProcessRumor(rumor); ok {
+			log.Debug().
+				Str("by", addr).
+				Str("rumor origin", rumor.Origin).
+				Uint("sequence", rumor.Sequence).
+				Str("relayed by", pkt.Header.RelayedBy).
+				Str("packet source", pkt.Header.Source).
+				Msg("check new rumor")
+
 			if !n.IsNeighbor(rumor.Origin) {
 				n.SetRoutingEntry(rumor.Origin, pkt.Header.RelayedBy)
 			}
@@ -123,16 +134,7 @@ func (n *node) HandleRumorsMessage(
 		return err
 	}
 
-	// Don't add the peer nor return an error ? just send the ack blindly ?
-	// if !n.IsNeighbor(pkt.Header.RelayedBy) {
-	// 	//TODO check if we add the peer or return an error ?
-	// 	n.AddPeer(pkt.Header.RelayedBy)
-	// }
 	n.PushSend(ackpkt, pkt.Header.RelayedBy)
-
-	if !n.IsNeighbor(pkt.Header.Source) {
-		n.SetRoutingEntry(pkt.Header.Source, pkt.Header.RelayedBy)
-	}
 
 	if isNew {
 		dest, err := n.routingTable.GetRandomNeighborBut(pkt.Header.RelayedBy)
@@ -361,13 +363,6 @@ func (n *node) HandleSearchRequestMessage(
 
 	if n.requestIds.Add(req.RequestID) {
 		// the request was already processed before
-		//TODO remove
-		log.Warn().
-			Str("by", addr).
-			Str("request id", req.RequestID).
-			Str("origin", req.Origin).
-			Msg("ignore search request message")
-
 		return nil
 	}
 
@@ -394,20 +389,10 @@ func (n *node) HandleSearchRequestMessage(
 		Responses: responses,
 	}
 
-	//TODO check if we answer directly to req.Origin or pkt.RelayBy
-	// or using routing table ?
 	reqpkt, err := n.TypeMessageToPacket(reqmsg, addr, addr, req.Origin, 0)
 	if err != nil {
 		return err
 	}
-	//TODO remove
-	log.Warn().
-		Str("by", addr).
-		Str("request id", req.RequestID).
-		Str("origin", req.Origin).
-		Int("number of matches", len(responses)).
-		Str("through", pkt.Header.RelayedBy).
-		Msg("answer search request message")
 
 	n.PushSend(reqpkt, pkt.Header.RelayedBy)
 
@@ -426,7 +411,6 @@ func (n *node) HandleSearchReplyMessage(
 		Int("number of match", len(rep.Responses)).
 		Msg("handle search reply message")
 
-	// dataBlobStore := n.conf.Storage.GetDataBlobStore()
 	for _, info := range rep.Responses {
 		n.conf.Storage.GetNamingStore().Set(info.Name, []byte(info.Metahash))
 		n.catalog.Put(string(info.Metahash), pkt.Header.Source)

@@ -114,7 +114,7 @@ func startLog() {
 
 	if !initialized {
 		zerolog.TimeFieldFormat = time.RFC3339Nano // for increased time precision
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)  // log level
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)  // log level
 		log.Logger = log.Output(
 			zerolog.ConsoleWriter{
 				Out:        os.Stderr,
@@ -304,7 +304,7 @@ func (n *node) AddPeer(addr ...string) {
 			Str("by", n.GetAddress()).
 			Str("address", peer).
 			Msg("add peer")
-		n.SetRoutingEntry(peer, peer) // no relay ?
+		n.SetRoutingEntry(peer, peer)
 	}
 }
 
@@ -318,7 +318,8 @@ func (n *node) GetRoutingTable() peer.RoutingTable {
 // SetRoutingEntry implements peer.Service
 func (n *node) SetRoutingEntry(origin, relayAddr string) {
 	log.Debug().
-		Str("origin", origin).
+		Str("by", n.GetAddress()).
+		Str("peer", origin).
 		Str("relay address", relayAddr).
 		Msg("set routing entry")
 
