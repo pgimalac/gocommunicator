@@ -114,7 +114,7 @@ func (s *Socket) Send(
 	//TODO not sure if we only add the packet if it was successfully sent or not
 	s.outs.Append(pkt.Copy())
 
-	log.Info().
+	log.Debug().
 		Str("by", s.GetAddress()).
 		Str("to", dest).
 		Int("size", size).
@@ -158,7 +158,7 @@ func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
 		return transport.Packet{}, err
 	}
 
-	log.Info().
+	log.Debug().
 		Str("by", s.GetAddress()).
 		Str("from", addr.String()).
 		Int("size", size).

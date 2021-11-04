@@ -22,7 +22,7 @@ func (n *node) HandleMsg(msg Msg) error {
 func (n *node) HandlePkt(pkt transport.Packet) error {
 	addr := n.GetAddress()
 
-	log.Info().
+	log.Debug().
 		Str("by", addr).
 		Str("header", pkt.Header.String()).
 		Str("message type", pkt.Msg.Type).
@@ -46,6 +46,13 @@ func (n *node) HandlePkt(pkt transport.Packet) error {
 		return errors.New("cannot relay the packet: no relay for the given destination")
 	}
 
+	log.Warn().
+		Str("by", addr).
+		Str("type", pkt.Msg.Type).
+		Str("destination", pkt.Header.Destination).
+		Str("through", relay).
+		Msg("relay packet")
+
 	n.PushSend(pkt, relay)
 	return nil
 }
@@ -63,7 +70,7 @@ func (n *node) HandleRumorsMessage(
 	pkt transport.Packet,
 ) error {
 	addr := n.GetAddress()
-	log.Debug().Str("by", addr).Msg("handle rumors message")
+	log.Info().Str("by", addr).Msg("handle rumors message")
 
 	relay := pkt.Header.RelayedBy
 	ttl := pkt.Header.TTL
@@ -144,7 +151,7 @@ func (n *node) HandleRumorsMessage(
 func (n *node) HandleAckMessage(msg types.Message, pkt transport.Packet) error {
 	addr := n.GetAddress()
 	ack := msg.(*types.AckMessage)
-	log.Debug().Str("by", addr).Msg("handle ack message")
+	log.Info().Str("by", addr).Msg("handle ack message")
 
 	// signal that an ack was received
 	n.asyncNotifier.Notify(pkt.Header.PacketID, pkt.Header.Source)
@@ -169,7 +176,7 @@ func (n *node) HandleStatusMessage(
 ) error {
 	status := *msg.(*types.StatusMessage)
 	addr := n.GetAddress()
-	log.Debug().Str("by", addr).Msg("handle status message")
+	log.Info().Str("by", addr).Msg("handle status message")
 
 	sendStatus := false
 	sendRumors := make([]types.Rumor, 0)
@@ -268,7 +275,7 @@ func (n *node) HandleDataRequestMessage(
 	req := msg.(*types.DataRequestMessage)
 	value := n.conf.Storage.GetDataBlobStore().Get(req.Key)
 
-	log.Debug().
+	log.Info().
 		Str("by", n.GetAddress()).
 		Str("key", req.Key).
 		Bool("chunk known", value != nil).
@@ -300,7 +307,7 @@ func (n *node) HandleDataReplyMessage(
 ) error {
 	rep := msg.(*types.DataReplyMessage)
 	containsChunk := rep.Value != nil && len(rep.Value) != 0
-	log.Debug().
+	log.Info().
 		Str("by", n.GetAddress()).
 		Str("key", rep.Key).
 		Bool("contains value", containsChunk).
@@ -354,6 +361,13 @@ func (n *node) HandleSearchRequestMessage(
 
 	if n.requestIds.Add(req.RequestID) {
 		// the request was already processed before
+		//TODO remove
+		log.Warn().
+			Str("by", addr).
+			Str("request id", req.RequestID).
+			Str("origin", req.Origin).
+			Msg("ignore search request message")
+
 		return nil
 	}
 
@@ -386,6 +400,15 @@ func (n *node) HandleSearchRequestMessage(
 	if err != nil {
 		return err
 	}
+	//TODO remove
+	log.Warn().
+		Str("by", addr).
+		Str("request id", req.RequestID).
+		Str("origin", req.Origin).
+		Int("number of matches", len(responses)).
+		Str("through", pkt.Header.RelayedBy).
+		Msg("answer search request message")
+
 	n.PushSend(reqpkt, pkt.Header.RelayedBy)
 
 	return nil

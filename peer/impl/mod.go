@@ -247,6 +247,7 @@ func (n *node) antiEntropy(done <-chan struct{}) {
 		return
 	}
 
+	n.SendStatusMessage()
 	tick := time.NewTicker(n.conf.AntiEntropyInterval)
 	for {
 		select {
@@ -264,17 +265,19 @@ func (n *node) heartbeat(done <-chan struct{}) {
 		return
 	}
 
+	msg := types.EmptyMessage{}
+	trmsg, err := n.conf.MessageRegistry.MarshalMessage(msg)
+	if err != nil {
+		log.Warn().Str("by", n.GetAddress()).Msg("marshalling empty message failed in heartbeat")
+		return
+	}
+	n.Broadcast(trmsg)
+
 	tick := time.NewTicker(n.conf.HeartbeatInterval)
 	for {
 		select {
 		case <-tick.C:
-			msg := types.EmptyMessage{}
-			trmsg, err := n.conf.MessageRegistry.MarshalMessage(msg)
-			if err == nil {
-				n.Broadcast(trmsg)
-			} else {
-				log.Warn().Str("by", n.GetAddress()).Msg("marshalling empty message failed in heartbeat")
-			}
+			n.Broadcast(trmsg)
 		case <-done:
 			return
 		}
