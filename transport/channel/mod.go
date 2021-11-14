@@ -123,7 +123,8 @@ func (s *Socket) Recv(timeout time.Duration) (transport.Packet, error) {
 		return transport.Packet{}, transport.TimeoutErr(timeout)
 	case pkt := <-myChan:
 		s.traffic.LogRecv(pkt.Header.RelayedBy, s.myAddr, pkt)
-		s.ins.add(pkt)
+		s.ins.add(pkt.Copy())
+
 		return pkt, nil
 	}
 }
