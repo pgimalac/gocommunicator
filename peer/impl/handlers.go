@@ -34,11 +34,9 @@ func (n *node) HandlePkt(pkt transport.Packet) error {
 	}
 
 	pkt.Header.RelayedBy = addr
-	if pkt.Header.TTL == 1 {
+	pkt.Header.TTL--
+	if pkt.Header.TTL == 0 {
 		return nil
-	}
-	if pkt.Header.TTL != 1 {
-		pkt.Header.TTL--
 	}
 
 	relay, ok := n.routingTable.GetRelay(pkt.Header.Destination)
@@ -46,7 +44,7 @@ func (n *node) HandlePkt(pkt transport.Packet) error {
 		return errors.New("cannot relay the packet: no relay for the given destination")
 	}
 
-	log.Warn().
+	log.Debug().
 		Str("by", addr).
 		Str("type", pkt.Msg.Type).
 		Str("destination", pkt.Header.Destination).
