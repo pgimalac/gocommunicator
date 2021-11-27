@@ -55,7 +55,7 @@ func (n *node) HandlePkt(pkt transport.Packet) error {
 	return nil
 }
 
-func (n *node) HandleChatmessage(
+func (n *node) HandleChatMessage(
 	msg types.Message,
 	pkt transport.Packet,
 ) error {
@@ -420,5 +420,30 @@ func (n *node) HandleSearchReplyMessage(
 	}
 	n.asyncNotifier.Notify(rep.RequestID, rep)
 
+	return nil
+}
+
+func (n *node) HandlePaxosPrepareMessage(msg types.Message, pkt transport.Packet) error {
+	//TODO
+	return nil
+}
+
+func (n *node) HandlePaxosPromiseMessage(msg types.Message, pkt transport.Packet) error {
+	//TODO
+	return nil
+}
+
+func (n *node) HandlePaxosProposeMessage(msg types.Message, pkt transport.Packet) error {
+	//TODO
+	return nil
+}
+
+func (n *node) HandlePaxosAcceptMessage(msg types.Message, pkt transport.Packet) error {
+	//TODO
+	return nil
+}
+
+func (n *node) HandleTLCMessage(msg types.Message, pkt transport.Packet) error {
+	//TODO
 	return nil
 }

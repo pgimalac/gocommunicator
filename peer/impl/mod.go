@@ -27,46 +27,32 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 	}
 
 	// register the callback for each message type
-	conf.MessageRegistry.RegisterMessageCallback(
-		types.ChatMessage{},
-		n.HandleChatmessage,
-	)
-	conf.MessageRegistry.RegisterMessageCallback(
-		types.RumorsMessage{},
-		n.HandleRumorsMessage,
-	)
-	conf.MessageRegistry.RegisterMessageCallback(
-		types.AckMessage{},
-		n.HandleAckMessage,
-	)
-	conf.MessageRegistry.RegisterMessageCallback(
-		types.StatusMessage{},
-		n.HandleStatusMessage,
-	)
-	conf.MessageRegistry.RegisterMessageCallback(
-		types.EmptyMessage{},
-		n.HandleEmptyMessage,
-	)
-	conf.MessageRegistry.RegisterMessageCallback(
-		types.PrivateMessage{},
-		n.HandlePrivateMessage,
-	)
-	conf.MessageRegistry.RegisterMessageCallback(
-		types.DataRequestMessage{},
-		n.HandleDataRequestMessage,
-	)
-	conf.MessageRegistry.RegisterMessageCallback(
-		types.DataReplyMessage{},
-		n.HandleDataReplyMessage,
-	)
-	conf.MessageRegistry.RegisterMessageCallback(
-		types.SearchRequestMessage{},
-		n.HandleSearchRequestMessage,
-	)
-	conf.MessageRegistry.RegisterMessageCallback(
-		types.SearchReplyMessage{},
-		n.HandleSearchReplyMessage,
-	)
+	handlers := []struct {
+		msg     types.Message
+		handler func(types.Message, transport.Packet) error
+	}{{types.ChatMessage{}, n.HandleChatMessage},
+		{types.RumorsMessage{}, n.HandleRumorsMessage},
+		{types.AckMessage{}, n.HandleAckMessage},
+		{types.StatusMessage{}, n.HandleStatusMessage},
+		{types.EmptyMessage{}, n.HandleEmptyMessage},
+		{types.PrivateMessage{}, n.HandlePrivateMessage},
+		{types.DataRequestMessage{}, n.HandleDataRequestMessage},
+		{types.DataReplyMessage{}, n.HandleDataReplyMessage},
+		{types.SearchRequestMessage{}, n.HandleSearchRequestMessage},
+		{types.SearchReplyMessage{}, n.HandleSearchReplyMessage},
+		{types.PaxosPrepareMessage{}, n.HandlePaxosPrepareMessage},
+		{types.PaxosPromiseMessage{}, n.HandlePaxosPromiseMessage},
+		{types.PaxosProposeMessage{}, n.HandlePaxosProposeMessage},
+		{types.PaxosAcceptMessage{}, n.HandlePaxosAcceptMessage},
+		{types.TLCMessage{}, n.HandleTLCMessage},
+	}
+
+	for _, handler := range handlers {
+		conf.MessageRegistry.RegisterMessageCallback(
+			handler.msg,
+			handler.handler,
+		)
+	}
 
 	return &n
 }
