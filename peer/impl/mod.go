@@ -24,6 +24,7 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 		asyncNotifier: NewSafeAsyncNotifier(),
 		catalog:       NewSafeCatalog(),
 		requestIds:    NewSafeSet(),
+		paxosinfo:     NewSafePaxosInfo(),
 	}
 
 	// register the callback for each message type
@@ -69,6 +70,7 @@ type node struct {
 	asyncNotifier SafeAsyncNotifier
 	catalog       SafeCatalog
 	requestIds    SafeSet
+	paxosinfo     SafePaxosInfo
 
 	rumorNum uint
 

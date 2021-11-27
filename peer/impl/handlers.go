@@ -424,26 +424,129 @@ func (n *node) HandleSearchReplyMessage(
 }
 
 func (n *node) HandlePaxosPrepareMessage(msg types.Message, pkt transport.Packet) error {
-	//TODO
+	prep := msg.(*types.PaxosPrepareMessage)
+
+	addr := n.GetAddress()
+	log.Info().
+		Str("by", addr).
+		Str("source", prep.Source).
+		Uint("step", prep.Step).
+		Uint("id", prep.ID).
+		Msg("handle paxos prepare message")
+
+	promise, ok := n.paxosinfo.HandlePrepare(prep)
+	if !ok {
+		return nil
+	}
+
+	trprom, err := n.TypeToTransportMessage(promise)
+	if err != nil {
+		return err
+	}
+
+	privmsg := types.PrivateMessage{
+		Recipients: map[string]struct{}{prep.Source: {}},
+		Msg:        &trprom,
+	}
+
+	trpriv, err := n.TypeToTransportMessage(privmsg)
+	if err != nil {
+		return err
+	}
+
+	err = n.Broadcast(trpriv)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (n *node) HandlePaxosPromiseMessage(msg types.Message, pkt transport.Packet) error {
+	prom := msg.(*types.PaxosPromiseMessage)
+
+	addr := n.GetAddress()
+	logmsg := log.Info().
+		Str("by", addr).
+		Uint("accepted id", prom.AcceptedID).
+		Uint("step", prom.Step).
+		Uint("id", prom.ID)
+	if prom.AcceptedValue != nil {
+		logmsg = logmsg.Str("unique id", prom.AcceptedValue.UniqID).
+			Str("filename", prom.AcceptedValue.Filename).
+			Str("metahash", prom.AcceptedValue.Metahash)
+	}
+	logmsg.Msg("handle paxos promise message")
+
 	//TODO
 	return nil
 }
 
 func (n *node) HandlePaxosProposeMessage(msg types.Message, pkt transport.Packet) error {
-	//TODO
+	prop := msg.(*types.PaxosProposeMessage)
+
+	addr := n.GetAddress()
+	log.Info().
+		Str("by", addr).
+		Uint("step", prop.Step).
+		Uint("id", prop.ID).
+		Str("unique id", prop.Value.UniqID).
+		Str("filename", prop.Value.Filename).
+		Str("metahash", prop.Value.Metahash).
+		Msg("handle paxos propose message")
+
+	if !n.paxosinfo.HandlePropose(prop) {
+		return nil
+	}
+
+	acc := types.PaxosAcceptMessage{
+		Step:  prop.Step,
+		ID:    prop.ID,
+		Value: prop.Value,
+	}
+	tracc, err := n.TypeToTransportMessage(acc)
+	if err != nil {
+		return err
+	}
+
+	err = n.Broadcast(tracc)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (n *node) HandlePaxosAcceptMessage(msg types.Message, pkt transport.Packet) error {
+	acc := msg.(*types.PaxosAcceptMessage)
+
+	addr := n.GetAddress()
+	log.Info().
+		Str("by", addr).
+		Uint("step", acc.Step).
+		Uint("id", acc.ID).
+		Str("unique id", acc.Value.UniqID).
+		Str("filename", acc.Value.Filename).
+		Str("metahash", acc.Value.Metahash).
+		Msg("handle paxos accept message")
+
 	//TODO
 	return nil
 }
 
 func (n *node) HandleTLCMessage(msg types.Message, pkt transport.Packet) error {
+	rep := msg.(*types.TLCMessage)
+
+	addr := n.GetAddress()
+	log.Info().
+		Str("by", addr).
+		Uint("step", rep.Step).
+		Uint("block index", rep.Block.Index).
+		Str("unique id", rep.Block.Value.UniqID).
+		Str("filename", rep.Block.Value.Filename).
+		Str("metahash", rep.Block.Value.Metahash).
+		Msg("handle TLC message")
+
 	//TODO
 	return nil
 }
