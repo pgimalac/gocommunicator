@@ -253,12 +253,16 @@ func (n *node) HandlePrivateMessage(
 ) error {
 	priv := msg.(*types.PrivateMessage)
 
-	if _, ok := priv.Recipients[n.GetAddress()]; ok {
+	addr := n.GetAddress()
+	_, ok := priv.Recipients[addr]
+	log.Info().Str("by", addr).Bool("recipient", ok).Msg("handle private message")
+
+	if ok {
 		pkt := n.TransportMessageToPacket(
 			*priv.Msg,
 			pkt.Header.Source,
 			pkt.Header.RelayedBy,
-			n.GetAddress(),
+			addr,
 			0,
 		)
 		n.HandlePkt(pkt)
@@ -468,18 +472,28 @@ func (n *node) HandlePaxosPromiseMessage(msg types.Message, pkt transport.Packet
 	addr := n.GetAddress()
 	logmsg := log.Info().
 		Str("by", addr).
-		Uint("accepted id", prom.AcceptedID).
 		Uint("step", prom.Step).
-		Uint("id", prom.ID)
+		Uint("id", prom.ID).
+		Str("from", pkt.Header.Source)
 	if prom.AcceptedValue != nil {
 		logmsg = logmsg.Str("unique id", prom.AcceptedValue.UniqID).
+			Uint("accepted id", prom.AcceptedID).
 			Str("filename", prom.AcceptedValue.Filename).
 			Str("metahash", prom.AcceptedValue.Metahash)
 	}
 	logmsg.Msg("handle paxos promise message")
 
-	//TODO
-	return nil
+	prop, ok := n.paxosinfo.HandlePromise(pkt.Header.Source, prom)
+	if !ok {
+		return nil
+	}
+
+	trprop, err := n.TypeToTransportMessage(prop)
+	if err != nil {
+		return err
+	}
+
+	return n.Broadcast(trprop)
 }
 
 func (n *node) HandlePaxosProposeMessage(msg types.Message, pkt transport.Packet) error {
@@ -495,15 +509,11 @@ func (n *node) HandlePaxosProposeMessage(msg types.Message, pkt transport.Packet
 		Str("metahash", prop.Value.Metahash).
 		Msg("handle paxos propose message")
 
-	if !n.paxosinfo.HandlePropose(prop) {
+	acc, ok := n.paxosinfo.HandlePropose(prop)
+	if !ok {
 		return nil
 	}
 
-	acc := types.PaxosAcceptMessage{
-		Step:  prop.Step,
-		ID:    prop.ID,
-		Value: prop.Value,
-	}
 	tracc, err := n.TypeToTransportMessage(acc)
 	if err != nil {
 		return err
@@ -530,7 +540,8 @@ func (n *node) HandlePaxosAcceptMessage(msg types.Message, pkt transport.Packet)
 		Str("metahash", acc.Value.Metahash).
 		Msg("handle paxos accept message")
 
-	//TODO
+	n.paxosinfo.HandleAccept(n, pkt.Header.Source, acc)
+
 	return nil
 }
 

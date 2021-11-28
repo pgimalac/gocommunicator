@@ -185,7 +185,7 @@ func (tp *AutoThreadPool) worker() {
 		worked = true
 	}
 
-	// le mutex has been locked before exiting the loop
+	// the mutex has been locked before exiting the loop
 	tp.size--
 	log.Debug().
 		Str("pool name", tp.name).

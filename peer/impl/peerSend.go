@@ -46,6 +46,7 @@ func (n *node) Unicast(dest string, msg transport.Message) error {
 // Broadcast implements peer.Messaging
 func (n *node) Broadcast(msg transport.Message) error {
 	addr := n.GetAddress()
+	log.Debug().Str("type", msg.Type).Str("by", n.GetAddress()).Msg("broadcast")
 
 	n.sync.Lock()
 	n.rumorNum += 1
@@ -60,6 +61,8 @@ func (n *node) Broadcast(msg transport.Message) error {
 	}
 	n.sync.Unlock()
 
+	go n.sendRumorsMessage(rm)
+
 	pkt, err := n.TypeMessageToPacket(rm, addr, addr, addr, 0)
 	if err != nil {
 		log.Warn().Str("by", addr).Err(err).Msg("packing the rumors message")
@@ -72,8 +75,6 @@ func (n *node) Broadcast(msg transport.Message) error {
 	if err != nil {
 		return err
 	}
-
-	go n.sendRumorsMessage(rm)
 
 	return nil
 }

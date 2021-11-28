@@ -2,23 +2,47 @@ package impl
 
 import (
 	"sync"
+	"time"
 
+	"github.com/rs/xid"
+	"github.com/rs/zerolog/log"
 	"go.dedis.ch/cs438/types"
 )
 
 type SafePaxosInfo struct {
-	clock uint
-	maxID uint
-
-	lock          sync.Mutex
+	clock         uint
+	maxID         uint
 	acceptedID    uint
 	acceptedValue *types.PaxosValue
+
+	nextID    uint
+	nbPeers   uint
+	threshold uint
+
+	phase uint
+
+	promises map[uint]map[string]struct{}
+	accepted map[string]map[string]struct{}
+
+	lock    sync.Mutex
+	myID    uint
+	myValue *types.PaxosValue
+
+	promChan chan uint
 }
 
-func NewSafePaxosInfo() SafePaxosInfo {
+func NewSafePaxosInfo(nextID, nbPeers, threshold uint) SafePaxosInfo {
 	return SafePaxosInfo{
-		clock: 0,
-		maxID: 0,
+		clock:      0,
+		maxID:      0,
+		acceptedID: 0,
+		phase:      0,
+		nextID:     nextID,
+		threshold:  threshold,
+		nbPeers:    nbPeers,
+		promises:   map[uint]map[string]struct{}{},
+		accepted:   map[string]map[string]struct{}{},
+		promChan:   make(chan uint),
 	}
 }
 
@@ -48,16 +72,171 @@ func (pi *SafePaxosInfo) HandlePrepare(prep *types.PaxosPrepareMessage) (types.P
 	return promise, true
 }
 
-func (pi *SafePaxosInfo) HandlePropose(prop *types.PaxosProposeMessage) bool {
+func (pi *SafePaxosInfo) HandlePropose(prop *types.PaxosProposeMessage) (types.PaxosAcceptMessage, bool) {
 	pi.lock.Lock()
 	defer pi.lock.Unlock()
 
 	if prop.Step != pi.clock || prop.ID != pi.maxID {
-		return false
+		return types.PaxosAcceptMessage{}, false
 	}
 
 	pi.acceptedValue = &prop.Value
 	pi.acceptedID = prop.ID
 
-	return true
+	acc := types.PaxosAcceptMessage{
+		Step:  prop.Step,
+		ID:    prop.ID,
+		Value: prop.Value,
+	}
+	return acc, true
+}
+
+func (pi *SafePaxosInfo) HandleAccept(n *node, source string, acc *types.PaxosAcceptMessage) bool {
+	pi.lock.Lock()
+	defer pi.lock.Unlock()
+
+	if acc.Step != pi.clock {
+		return false
+	}
+
+	_, ok := pi.accepted[acc.Value.UniqID]
+	if !ok {
+		pi.accepted[acc.Value.UniqID] = make(map[string]struct{})
+	}
+
+	pi.accepted[acc.Value.UniqID][source] = struct{}{}
+	ok = uint(len(pi.accepted[acc.Value.UniqID])) >= pi.threshold
+
+	if ok {
+		n.conf.Storage.GetNamingStore().Set(acc.Value.Filename, []byte(acc.Value.Metahash))
+		pi.phase = 3 // to avoid messing things up ; to remove with multi-paxos
+		// pi.clock++
+	}
+
+	return ok
+}
+
+func (pi *SafePaxosInfo) HandlePromise(source string, prom *types.PaxosPromiseMessage) (types.PaxosProposeMessage, bool) {
+	pi.lock.Lock()
+	defer pi.lock.Unlock()
+
+	if pi.phase != 1 || prom.Step != pi.clock {
+		return types.PaxosProposeMessage{}, false
+	}
+
+	_, ok := pi.promises[prom.ID]
+	if !ok {
+		pi.promises[prom.ID] = make(map[string]struct{})
+	}
+
+	if prom.AcceptedValue != nil && prom.AcceptedID > pi.acceptedID {
+		pi.acceptedValue = prom.AcceptedValue
+		pi.acceptedID = prom.AcceptedID
+	}
+
+	pi.promises[prom.ID][source] = struct{}{}
+	ok = uint(len(pi.promises[prom.ID])) >= pi.threshold
+
+	if !ok {
+		return types.PaxosProposeMessage{}, false
+	}
+
+	prop := types.PaxosProposeMessage{
+		Step:  0,
+		ID:    pi.myID,
+		Value: *pi.myValue,
+	}
+
+	if pi.acceptedValue != nil {
+		prop.ID = pi.acceptedID
+		prop.Value = *pi.acceptedValue
+	}
+
+	pi.phase = 2
+
+	return prop, true
+}
+
+func broadcastMsg(n *node, msg types.Message) error {
+	trmsg, err := n.TypeToTransportMessage(msg)
+	if err != nil {
+		return err
+	}
+
+	return n.Broadcast(trmsg)
+}
+
+// broadcasts a new prepare message
+func (pi *SafePaxosInfo) broadcastPrepare(n *node, id uint) error {
+	prep := types.PaxosPrepareMessage{
+		Step:   pi.clock,
+		ID:     id,
+		Source: n.GetAddress(),
+	}
+
+	return broadcastMsg(n, prep)
+}
+
+// The routine that re-broadcasts periodically the prepare message
+func (pi *SafePaxosInfo) paxosRoutine(n *node) {
+	n.sync.Lock()
+	rt := n.rt
+	n.sync.Unlock()
+	if rt == nil {
+		return
+	}
+
+	done := rt.context.Done()
+	ticker := time.NewTicker(n.conf.PaxosProposerRetry)
+	var err error = nil
+
+	for {
+		select {
+		case <-ticker.C:
+			if pi.phase != 1 && pi.phase != 2 {
+				return
+			}
+
+			if pi.phase == 1 {
+				pi.lock.Lock()
+				pi.myID = pi.nextID
+				pi.nextID += pi.nbPeers
+				pi.promises[pi.myID] = map[string]struct{}{}
+				err = pi.broadcastPrepare(n, pi.myID)
+				pi.lock.Unlock()
+
+				if err != nil {
+					log.Warn().Err(err).Msg("paxos broadcast prepare")
+				}
+			}
+
+			if pi.phase == 2 {
+				pi.phase = 1 // back to phase 1
+			}
+		case <-done:
+			return
+		}
+	}
+}
+
+func (pi *SafePaxosInfo) New(n *node, name, mh string) error {
+	pi.lock.Lock()
+	pi.myID = pi.nextID
+	pi.nextID += pi.nbPeers
+	pi.myValue = &types.PaxosValue{
+		UniqID:   xid.New().String(),
+		Filename: name,
+		Metahash: mh,
+	}
+	pi.phase = 1
+	pi.lock.Unlock()
+
+	err := pi.broadcastPrepare(n, pi.myID)
+	if err != nil {
+		return err
+	}
+
+	go pi.paxosRoutine(n)
+
+	return nil
 }

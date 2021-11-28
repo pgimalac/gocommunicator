@@ -208,8 +208,6 @@ func (n *node) Download(metahash string) ([]byte, error) {
 		return nil, errors.New("unknown file")
 	}
 	destpos := rand.Intn(len(dests))
-	//TODO possible optimization: change destination when timeout
-	// or use several in parallel
 	dest := dests[destpos]
 
 	dataBlobStore := n.conf.Storage.GetDataBlobStore()
@@ -239,7 +237,11 @@ func (n *node) Download(metahash string) ([]byte, error) {
 }
 
 func (n *node) Tag(name string, mh string) error {
-	n.conf.Storage.GetNamingStore().Set(name, []byte(mh))
+	err := n.paxosinfo.New(n, name, mh)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -265,20 +267,12 @@ func (n *node) UpdateCatalog(key string, peer string) {
 	n.catalog.Put(key, peer)
 }
 
-//TODO check if we're supposed to match the whole name or not.
-// func fullRegexp(reg regexp.Regexp) regexp.Regexp {
-// 	return *regexp.MustCompile("^" + reg.String() + "$")
-// }
-
 func (n *node) SearchAll(reg regexp.Regexp, budget uint, timeout time.Duration) ([]string, error) {
 	addr := n.GetAddress()
 	dests := n.routingTable.GetRandomNeighbors(budget)
 
-	// ch := make(chan string, budget)
 	id := xid.New().String()
 	n.requestIds.Add(id)
-	// n.expectedAcks.AddChannel(id, ch)
-	// defer n.expectedAcks.RemoveChannel(id)
 
 	n.SendSearchRequestMessage(dests, addr, id, reg.String(), budget)
 	destset := make(map[string]struct{})
@@ -287,31 +281,8 @@ func (n *node) SearchAll(reg regexp.Regexp, budget uint, timeout time.Duration) 
 	}
 
 	timer := time.NewTicker(timeout)
-	//TODO check if we're supposed to
-	// - wait for size replies, or timeout
-	// - wait for budget replies, or timeout
-	// - wait for the timeout only
-
-	// size := uint(len(dests))
-	// for pos := uint(0); pos < size; pos++ {
-	// 	select {
-	// 	case addr := <-ch:
-	// 		delete(destset, addr)
-	// 		if len(destset) != 0 {
-	// 			// we're still expecting some answers
-	// 			continue
-	// 		}
-	// 	case <-timer.C:
-	// 	}
-
-	// 	// either we have received everything we were waiting for
-	// 	// or we timed out
-	// 	break
-	// }
 	<-timer.C
 
-	//TODO check if we're supposed to match the whole name or not
-	// reg = fullRegexp(reg)
 	names := make([]string, 0)
 	n.conf.Storage.GetNamingStore().ForEach(func(key string, val []byte) bool {
 		if reg.MatchString(key) {

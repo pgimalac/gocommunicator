@@ -24,7 +24,7 @@ func NewPeer(conf peer.Configuration) peer.Peer {
 		asyncNotifier: NewSafeAsyncNotifier(),
 		catalog:       NewSafeCatalog(),
 		requestIds:    NewSafeSet(),
-		paxosinfo:     NewSafePaxosInfo(),
+		paxosinfo:     NewSafePaxosInfo(conf.PaxosID, conf.TotalPeers, uint(conf.PaxosThreshold(conf.TotalPeers))),
 	}
 
 	// register the callback for each message type
@@ -102,7 +102,7 @@ func startLog() {
 
 	if !initialized {
 		zerolog.TimeFieldFormat = time.RFC3339Nano // for increased time precision
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)  // log level
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)  // log level
 		log.Logger = log.Output(
 			zerolog.ConsoleWriter{
 				Out:        os.Stderr,
