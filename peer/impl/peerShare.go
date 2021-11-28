@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"math/rand"
 	"regexp"
@@ -237,10 +238,21 @@ func (n *node) Download(metahash string) ([]byte, error) {
 }
 
 func (n *node) Tag(name string, mh string) error {
-	err := n.paxosinfo.New(n, name, mh)
-	if err != nil {
-		return err
+	n.paxosinfo.runlock.Lock()
+	defer n.paxosinfo.runlock.Unlock()
+
+	if n.conf.Storage.GetNamingStore().Get(name) != nil {
+		return fmt.Errorf("tag: %s already exists in the naming store", name)
 	}
+
+	if n.conf.TotalPeers != 1 {
+		err := n.paxosinfo.Start(n, name, mh)
+		if err != nil {
+			return err
+		}
+	}
+
+	n.conf.Storage.GetNamingStore().Set(name, []byte(mh))
 
 	return nil
 }

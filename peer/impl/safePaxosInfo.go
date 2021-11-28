@@ -25,10 +25,9 @@ type SafePaxosInfo struct {
 	accepted map[string]map[string]struct{}
 
 	lock    sync.Mutex
+	runlock sync.Mutex
 	myID    uint
 	myValue *types.PaxosValue
-
-	promChan chan uint
 }
 
 func NewSafePaxosInfo(nextID, nbPeers, threshold uint) SafePaxosInfo {
@@ -42,7 +41,6 @@ func NewSafePaxosInfo(nextID, nbPeers, threshold uint) SafePaxosInfo {
 		nbPeers:    nbPeers,
 		promises:   map[uint]map[string]struct{}{},
 		accepted:   map[string]map[string]struct{}{},
-		promChan:   make(chan uint),
 	}
 }
 
@@ -108,9 +106,9 @@ func (pi *SafePaxosInfo) HandleAccept(n *node, source string, acc *types.PaxosAc
 	ok = uint(len(pi.accepted[acc.Value.UniqID])) >= pi.threshold
 
 	if ok {
-		n.conf.Storage.GetNamingStore().Set(acc.Value.Filename, []byte(acc.Value.Metahash))
-		pi.phase = 3 // to avoid messing things up ; to remove with multi-paxos
-		// pi.clock++
+		pi.acceptedValue = &acc.Value
+		pi.acceptedID = acc.ID
+		pi.phase = 3
 	}
 
 	return ok
@@ -177,24 +175,38 @@ func (pi *SafePaxosInfo) broadcastPrepare(n *node, id uint) error {
 	return broadcastMsg(n, prep)
 }
 
-// The routine that re-broadcasts periodically the prepare message
-func (pi *SafePaxosInfo) paxosRoutine(n *node) {
+func (pi *SafePaxosInfo) Start(n *node, name, mh string) error {
+	pi.lock.Lock()
+	pi.myID = pi.nextID
+	pi.nextID += pi.nbPeers
+	pi.myValue = &types.PaxosValue{
+		UniqID:   xid.New().String(),
+		Filename: name,
+		Metahash: mh,
+	}
+	pi.phase = 1
+	pi.lock.Unlock()
+
+	err := pi.broadcastPrepare(n, pi.myID)
+	if err != nil {
+		return err
+	}
+
 	n.sync.Lock()
 	rt := n.rt
 	n.sync.Unlock()
 	if rt == nil {
-		return
+		return nil //errors.New("the node is stopped")
 	}
-
 	done := rt.context.Done()
+
 	ticker := time.NewTicker(n.conf.PaxosProposerRetry)
-	var err error = nil
 
 	for {
 		select {
 		case <-ticker.C:
-			if pi.phase != 1 && pi.phase != 2 {
-				return
+			if pi.phase == 3 {
+				return nil
 			}
 
 			if pi.phase == 1 {
@@ -214,29 +226,7 @@ func (pi *SafePaxosInfo) paxosRoutine(n *node) {
 				pi.phase = 1 // back to phase 1
 			}
 		case <-done:
-			return
+			return nil //errors.New("the node is stopped")
 		}
 	}
-}
-
-func (pi *SafePaxosInfo) New(n *node, name, mh string) error {
-	pi.lock.Lock()
-	pi.myID = pi.nextID
-	pi.nextID += pi.nbPeers
-	pi.myValue = &types.PaxosValue{
-		UniqID:   xid.New().String(),
-		Filename: name,
-		Metahash: mh,
-	}
-	pi.phase = 1
-	pi.lock.Unlock()
-
-	err := pi.broadcastPrepare(n, pi.myID)
-	if err != nil {
-		return err
-	}
-
-	go pi.paxosRoutine(n)
-
-	return nil
 }
