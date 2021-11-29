@@ -241,6 +241,11 @@ func (n *node) Tag(name string, mh string) error {
 	n.paxosinfo.runlock.Lock()
 	defer n.paxosinfo.runlock.Unlock()
 
+	if n.conf.TotalPeers == 1 {
+		n.conf.Storage.GetNamingStore().Set(name, []byte(mh))
+		return nil
+	}
+
 	n.sync.Lock()
 	rt := n.rt
 	n.sync.Unlock()
@@ -249,32 +254,24 @@ func (n *node) Tag(name string, mh string) error {
 	}
 	context := rt.context
 
-	done := false
-	for !done {
-		if n.conf.Storage.GetNamingStore().Get(name) != nil {
+	for {
+		val := n.conf.Storage.GetNamingStore().Get(name)
+		if string(val) == mh {
+			return nil
+		}
+
+		if val != nil {
 			return fmt.Errorf("tag: %s already exists in the naming store", name)
 		}
 
-		if n.conf.TotalPeers == 1 {
-			done = true
-		} else {
-			validname, validmh, err := n.paxosinfo.Start(n, name, mh)
-
-			if err != nil {
-				if context.Err() != nil { // the peer is stopped
-					return nil
-				}
-				return err
+		err := n.paxosinfo.Start(n, name, mh)
+		if err != nil {
+			if context.Err() != nil { // the peer is stopped
+				return nil
 			}
-
-			done = validname == name && validmh == mh
-			n.conf.Storage.GetNamingStore().Set(validname, []byte(validmh))
+			return err
 		}
 	}
-
-	n.conf.Storage.GetNamingStore().Set(name, []byte(mh))
-
-	return nil
 }
 
 func (n *node) Resolve(name string) string {

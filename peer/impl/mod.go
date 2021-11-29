@@ -2,14 +2,17 @@ package impl
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"go.dedis.ch/cs438/peer"
+	"go.dedis.ch/cs438/storage"
 	"go.dedis.ch/cs438/transport"
 	"go.dedis.ch/cs438/types"
 )
@@ -314,5 +317,25 @@ func (n *node) SetRoutingEntry(origin, relayAddr string) {
 	// we ignore our own address
 	if origin != n.GetAddress() {
 		n.routingTable.SetRoutingEntry(origin, relayAddr)
+	}
+}
+
+func (n *node) computeBlock(acc types.PaxosAcceptMessage) types.BlockchainBlock {
+	prevHash := n.conf.Storage.GetBlockchainStore().Get(storage.LastBlockKey)
+
+	hasher := sha256.New()
+	hasher.Write([]byte(strconv.Itoa(int(acc.Step))))
+	hasher.Write([]byte(acc.Value.UniqID))
+	hasher.Write([]byte(acc.Value.Filename))
+	hasher.Write([]byte(acc.Value.Metahash))
+	hasher.Write(prevHash)
+
+	hash := hasher.Sum(make([]byte, 0))
+
+	return types.BlockchainBlock{
+		Index:    acc.Step,
+		Hash:     hash,
+		Value:    acc.Value,
+		PrevHash: prevHash,
 	}
 }

@@ -546,18 +546,19 @@ func (n *node) HandlePaxosAcceptMessage(msg types.Message, pkt transport.Packet)
 }
 
 func (n *node) HandleTLCMessage(msg types.Message, pkt transport.Packet) error {
-	rep := msg.(*types.TLCMessage)
+	tlc := msg.(*types.TLCMessage)
 
 	addr := n.GetAddress()
 	log.Info().
 		Str("by", addr).
-		Uint("step", rep.Step).
-		Uint("block index", rep.Block.Index).
-		Str("unique id", rep.Block.Value.UniqID).
-		Str("filename", rep.Block.Value.Filename).
-		Str("metahash", rep.Block.Value.Metahash).
+		Uint("step", tlc.Step).
+		Uint("block index", tlc.Block.Index).
+		Str("unique id", tlc.Block.Value.UniqID).
+		Str("filename", tlc.Block.Value.Filename).
+		Str("metahash", tlc.Block.Value.Metahash).
 		Msg("handle TLC message")
 
-	//TODO
+	n.paxosinfo.HandleTLC(n, pkt.Header.Source, tlc)
+
 	return nil
 }
