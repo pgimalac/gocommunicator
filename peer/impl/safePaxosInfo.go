@@ -168,7 +168,7 @@ func (pi *SafePaxosInfo) HandlePromise(source string, prom *types.PaxosPromiseMe
 	}
 
 	prop := types.PaxosProposeMessage{
-		Step:  0,
+		Step:  pi.clock,
 		ID:    pi.myID,
 		Value: *pi.myValue,
 	}
@@ -231,7 +231,6 @@ func (pi *SafePaxosInfo) HandleTLC(n *node, source string, tlc *types.TLCMessage
 		default:
 		}
 
-		pi.phase = 1
 		catchup = true
 	}
 
@@ -264,12 +263,6 @@ func (pi *SafePaxosInfo) broadcastPrepare(n *node, id uint) error {
 func (pi *SafePaxosInfo) Stop() {
 	pi.lock.Lock()
 
-	pi.nextID = pi.initID
-	pi.phase = 1
-
-	pi.promises = make(map[uint]map[string]struct{})
-	pi.accepted = make(map[string]map[string]struct{})
-
 	pi.myID = 0
 	pi.myValue = nil
 
@@ -281,10 +274,15 @@ func (pi *SafePaxosInfo) Stop() {
 func (pi *SafePaxosInfo) tick() {
 	pi.clock++
 
+	pi.nextID = pi.initID
+	pi.phase = 0
+
+	pi.promises = map[uint]map[string]struct{}{}
+	pi.accepted = map[string]map[string]struct{}{}
+
 	pi.maxID = 0
 	pi.acceptedID = 0
 	pi.acceptedValue = nil
-	pi.phase = 1
 }
 
 func (pi *SafePaxosInfo) Start(n *node, name, mh string) error {
@@ -323,7 +321,7 @@ func (pi *SafePaxosInfo) Start(n *node, name, mh string) error {
 		case <-ticker.C:
 			pi.lock.Lock()
 			if pi.phase == 2 {
-				pi.phase = 1 // back to phase 1
+				pi.phase = 1
 			}
 
 			if pi.phase == 1 {
