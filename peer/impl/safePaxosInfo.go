@@ -1,6 +1,7 @@
 package impl
 
 import (
+	"encoding/hex"
 	"errors"
 	"sync"
 	"time"
@@ -26,7 +27,8 @@ type SafePaxosInfo struct {
 
 	promises map[uint]map[string]struct{}
 	accepted map[string]map[string]struct{}
-	tlcs     map[uint]map[string]struct{}
+	tlcs     map[uint]uint
+	lasttlc  map[uint]struct{}
 
 	chanAcc chan types.PaxosAcceptMessage
 	chanTLC chan types.BlockchainBlock
@@ -49,7 +51,8 @@ func NewSafePaxosInfo(nextID, nbPeers, threshold uint) SafePaxosInfo {
 		nbPeers:    nbPeers,
 		promises:   map[uint]map[string]struct{}{},
 		accepted:   map[string]map[string]struct{}{},
-		tlcs:       map[uint]map[string]struct{}{},
+		tlcs:       map[uint]uint{},
+		lasttlc:    map[uint]struct{}{},
 		chanAcc:    make(chan types.PaxosAcceptMessage),
 		chanTLC:    make(chan types.BlockchainBlock),
 	}
@@ -128,9 +131,10 @@ func (pi *SafePaxosInfo) HandleAccept(n *node, source string, acc *types.PaxosAc
 	pi.phase = 3
 	block := n.computeBlock(*acc)
 	tlc := types.TLCMessage{
-		Step:  pi.clock + 1,
+		Step:  pi.clock,
 		Block: block,
 	}
+	pi.lasttlc[pi.clock] = struct{}{}
 	return broadcastMsg(n, tlc)
 }
 
@@ -183,24 +187,26 @@ func (pi *SafePaxosInfo) HandleTLC(n *node, source string, tlc *types.TLCMessage
 
 	_, ok := pi.tlcs[tlc.Step]
 	if !ok {
-		pi.tlcs[tlc.Step] = map[string]struct{}{}
+		pi.tlcs[tlc.Step] = 0
 	}
-	pi.tlcs[tlc.Step][source] = struct{}{}
+	pi.tlcs[tlc.Step]++
 
-	if tlc.Step != pi.clock+1 {
+	if tlc.Step != pi.clock {
 		return false
 	}
 
 	catchup := false
-	for uint(len(pi.tlcs[pi.clock+1])) >= pi.threshold {
-		_, ok := pi.tlcs[pi.clock+1][n.GetAddress()]
+	for pi.tlcs[pi.clock] >= pi.threshold {
+		_, ok := pi.lasttlc[pi.clock]
 		if !catchup && !ok {
-			// if we haven't already sent a TLC, do it
+			// if we haven't already sent a TLC and we're not catching up
+			// send a TLC
 			mytlc := types.TLCMessage{
-				Step:  pi.clock + 1,
+				Step:  pi.clock,
 				Block: tlc.Block,
 			}
-			broadcastMsg(n, mytlc)
+			pi.lasttlc[pi.clock] = struct{}{}
+			go broadcastMsg(n, mytlc)
 		}
 
 		blockbytes, err := tlc.Block.Marshal()
@@ -208,9 +214,12 @@ func (pi *SafePaxosInfo) HandleTLC(n *node, source string, tlc *types.TLCMessage
 			log.Warn().Err(err).Msg("handle tlc: marshalling message")
 			return false
 		}
-		n.conf.Storage.GetBlockchainStore().Set(string(tlc.Block.Hash), blockbytes)
-		n.conf.Storage.GetBlockchainStore().Set(storage.LastBlockKey, blockbytes)
-		pi.clock++
+
+		n.conf.Storage.GetBlockchainStore().Set(hex.EncodeToString(tlc.Block.Hash), blockbytes)
+		n.conf.Storage.GetBlockchainStore().Set(storage.LastBlockKey, tlc.Block.Hash)
+		n.conf.Storage.GetNamingStore().Set(tlc.Block.Value.Filename, []byte(tlc.Block.Value.Metahash))
+
+		pi.tick()
 
 		select {
 		case pi.chanTLC <- tlc.Block:
@@ -261,17 +270,13 @@ func (pi *SafePaxosInfo) Stop() {
 }
 
 // increase the clock and reset the fields that depend on the clock
-func (pi *SafePaxosInfo) Tick() {
-	pi.lock.Lock()
-
+func (pi *SafePaxosInfo) tick() {
 	pi.clock++
 
 	pi.maxID = 0
 	pi.acceptedID = 0
 	pi.acceptedValue = nil
 	pi.phase = 1
-
-	pi.lock.Unlock()
 }
 
 func (pi *SafePaxosInfo) Start(n *node, name, mh string) error {

@@ -409,6 +409,7 @@ func (n *node) HandleSearchReplyMessage(
 	addr := n.GetAddress()
 	log.Info().
 		Str("by", addr).
+		Str("from", pkt.Header.Source).
 		Str("request id", rep.RequestID).
 		Int("number of match", len(rep.Responses)).
 		Msg("handle search reply message")
@@ -433,6 +434,7 @@ func (n *node) HandlePaxosPrepareMessage(msg types.Message, pkt transport.Packet
 	addr := n.GetAddress()
 	log.Info().
 		Str("by", addr).
+		Str("from", pkt.Header.Source).
 		Str("source", prep.Source).
 		Uint("step", prep.Step).
 		Uint("id", prep.ID).
@@ -502,6 +504,7 @@ func (n *node) HandlePaxosProposeMessage(msg types.Message, pkt transport.Packet
 	addr := n.GetAddress()
 	log.Info().
 		Str("by", addr).
+		Str("from", pkt.Header.Source).
 		Uint("step", prop.Step).
 		Uint("id", prop.ID).
 		Str("unique id", prop.Value.UniqID).
@@ -533,6 +536,7 @@ func (n *node) HandlePaxosAcceptMessage(msg types.Message, pkt transport.Packet)
 	addr := n.GetAddress()
 	log.Info().
 		Str("by", addr).
+		Str("from", pkt.Header.Source).
 		Uint("step", acc.Step).
 		Uint("id", acc.ID).
 		Str("unique id", acc.Value.UniqID).
@@ -551,6 +555,7 @@ func (n *node) HandleTLCMessage(msg types.Message, pkt transport.Packet) error {
 	addr := n.GetAddress()
 	log.Info().
 		Str("by", addr).
+		Str("from", pkt.Header.Source).
 		Uint("step", tlc.Step).
 		Uint("block index", tlc.Block.Index).
 		Str("unique id", tlc.Block.Value.UniqID).
