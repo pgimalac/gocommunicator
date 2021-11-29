@@ -29,6 +29,7 @@ type SafePaxosInfo struct {
 	accepted map[string]map[string]struct{}
 	tlcs     map[uint]uint
 	lasttlc  map[uint]struct{}
+	tlcblock map[uint]types.BlockchainBlock
 
 	chanAcc chan types.PaxosAcceptMessage
 	chanTLC chan types.BlockchainBlock
@@ -51,6 +52,7 @@ func NewSafePaxosInfo(nextID, nbPeers, threshold uint) SafePaxosInfo {
 		nbPeers:    nbPeers,
 		promises:   map[uint]map[string]struct{}{},
 		accepted:   map[string]map[string]struct{}{},
+		tlcblock:   map[uint]types.BlockchainBlock{},
 		tlcs:       map[uint]uint{},
 		lasttlc:    map[uint]struct{}{},
 		chanAcc:    make(chan types.PaxosAcceptMessage),
@@ -135,7 +137,8 @@ func (pi *SafePaxosInfo) HandleAccept(n *node, source string, acc *types.PaxosAc
 		Block: block,
 	}
 	pi.lasttlc[pi.clock] = struct{}{}
-	return broadcastMsg(n, tlc)
+	go broadcastMsg(n, tlc)
+	return nil
 }
 
 // handles Promise message
@@ -191,6 +194,7 @@ func (pi *SafePaxosInfo) HandleTLC(n *node, source string, tlc *types.TLCMessage
 	}
 	pi.tlcs[tlc.Step]++
 
+	pi.tlcblock[tlc.Step] = tlc.Block
 	if tlc.Step != pi.clock {
 		return false
 	}
@@ -198,34 +202,36 @@ func (pi *SafePaxosInfo) HandleTLC(n *node, source string, tlc *types.TLCMessage
 	catchup := false
 	for pi.tlcs[pi.clock] >= pi.threshold {
 		_, ok := pi.lasttlc[pi.clock]
+		block := pi.tlcblock[pi.clock]
 		if !catchup && !ok {
 			// if we haven't already sent a TLC and we're not catching up
 			// send a TLC
 			mytlc := types.TLCMessage{
 				Step:  pi.clock,
-				Block: tlc.Block,
+				Block: block,
 			}
 			pi.lasttlc[pi.clock] = struct{}{}
 			go broadcastMsg(n, mytlc)
 		}
 
-		blockbytes, err := tlc.Block.Marshal()
+		blockbytes, err := block.Marshal()
 		if err != nil {
 			log.Warn().Err(err).Msg("handle tlc: marshalling message")
 			return false
 		}
 
-		n.conf.Storage.GetBlockchainStore().Set(hex.EncodeToString(tlc.Block.Hash), blockbytes)
-		n.conf.Storage.GetBlockchainStore().Set(storage.LastBlockKey, tlc.Block.Hash)
-		n.conf.Storage.GetNamingStore().Set(tlc.Block.Value.Filename, []byte(tlc.Block.Value.Metahash))
+		n.conf.Storage.GetBlockchainStore().Set(hex.EncodeToString(block.Hash), blockbytes)
+		n.conf.Storage.GetBlockchainStore().Set(storage.LastBlockKey, block.Hash)
+		n.conf.Storage.GetNamingStore().Set(block.Value.Filename, []byte(block.Value.Metahash))
 
 		pi.tick()
 
 		select {
-		case pi.chanTLC <- tlc.Block:
+		case pi.chanTLC <- block:
 		default:
 		}
 
+		pi.phase = 1
 		catchup = true
 	}
 
@@ -238,7 +244,8 @@ func broadcastMsg(n *node, msg types.Message) error {
 		return err
 	}
 
-	return n.Broadcast(trmsg)
+	n.Broadcast(trmsg)
+	return nil
 }
 
 // broadcasts a new prepare message
@@ -270,6 +277,7 @@ func (pi *SafePaxosInfo) Stop() {
 }
 
 // increase the clock and reset the fields that depend on the clock
+// must be called with the lock Locked
 func (pi *SafePaxosInfo) tick() {
 	pi.clock++
 
@@ -281,7 +289,6 @@ func (pi *SafePaxosInfo) tick() {
 
 func (pi *SafePaxosInfo) Start(n *node, name, mh string) error {
 	defer pi.Stop()
-
 	pi.lock.Lock()
 	pi.myID = pi.nextID
 	pi.nextID += pi.nbPeers
@@ -307,32 +314,25 @@ func (pi *SafePaxosInfo) Start(n *node, name, mh string) error {
 	done := rt.context.Done()
 
 	ticker := time.NewTicker(n.conf.PaxosProposerRetry)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-pi.chanTLC:
-			if pi.phase != 3 {
-				continue
-			}
-			pi.phase = 1
 			return nil
 		case <-ticker.C:
-			if pi.phase == 1 {
-				pi.lock.Lock()
-				pi.myID = pi.nextID
-				pi.nextID += pi.nbPeers
-				pi.promises[pi.myID] = map[string]struct{}{}
-				err = pi.broadcastPrepare(n, pi.myID)
-				pi.lock.Unlock()
-
-				if err != nil {
-					log.Warn().Err(err).Msg("paxos broadcast prepare")
-				}
-			}
-
+			pi.lock.Lock()
 			if pi.phase == 2 {
 				pi.phase = 1 // back to phase 1
 			}
+
+			if pi.phase == 1 {
+				pi.myID = pi.nextID
+				pi.nextID += pi.nbPeers
+				pi.promises[pi.myID] = map[string]struct{}{}
+				go pi.broadcastPrepare(n, pi.myID)
+			}
+			pi.lock.Unlock()
 		case <-done:
 			return errors.New("the node is stopped")
 		}

@@ -74,8 +74,9 @@ func (n *node) HandleRumorsMessage(
 	rumorsmsg := msg.(*types.RumorsMessage)
 	isNew := false
 
-	log.Info().
+	log.Debug().
 		Str("by", addr).
+		Str("from", pkt.Header.Source).
 		Str("relayed by", pkt.Header.RelayedBy).
 		Msg("handle rumors message")
 
@@ -151,7 +152,7 @@ func (n *node) HandleRumorsMessage(
 func (n *node) HandleAckMessage(msg types.Message, pkt transport.Packet) error {
 	addr := n.GetAddress()
 	ack := msg.(*types.AckMessage)
-	log.Info().Str("by", addr).Msg("handle ack message")
+	log.Debug().Str("by", addr).Msg("handle ack message")
 
 	// signal that an ack was received
 	n.asyncNotifier.Notify(pkt.Header.PacketID, pkt.Header.Source)
@@ -176,7 +177,7 @@ func (n *node) HandleStatusMessage(
 ) error {
 	status := *msg.(*types.StatusMessage)
 	addr := n.GetAddress()
-	log.Info().Str("by", addr).Msg("handle status message")
+	log.Debug().Str("by", addr).Msg("handle status message")
 
 	sendStatus := false
 	sendRumors := make([]types.Rumor, 0)

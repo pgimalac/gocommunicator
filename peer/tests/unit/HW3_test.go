@@ -1404,6 +1404,8 @@ func Test_HW3_Tag_Paxos_Catchup(t *testing.T) {
 		name := make([]byte, 12)
 		rand.Read(name)
 
+		println(i)
+
 		err := node1.Tag(hex.EncodeToString(name), "metahash")
 		require.NoError(t, err)
 	}

@@ -322,6 +322,9 @@ func (n *node) SetRoutingEntry(origin, relayAddr string) {
 
 func (n *node) computeBlock(acc types.PaxosAcceptMessage) types.BlockchainBlock {
 	prevHash := n.conf.Storage.GetBlockchainStore().Get(storage.LastBlockKey)
+	if prevHash == nil {
+		prevHash = make([]byte, 32)
+	}
 
 	hasher := sha256.New()
 	hasher.Write([]byte(strconv.Itoa(int(acc.Step))))
