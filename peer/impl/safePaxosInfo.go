@@ -244,11 +244,13 @@ func broadcastMsg(n *node, msg types.Message) error {
 
 // broadcasts a new prepare message
 func (pi *SafePaxosInfo) broadcastPrepare(n *node, id uint) error {
+	pi.lock.Lock()
 	prep := types.PaxosPrepareMessage{
 		Step:   pi.clock,
 		ID:     id,
 		Source: n.GetAddress(),
 	}
+	pi.lock.Unlock()
 
 	return broadcastMsg(n, prep)
 }
