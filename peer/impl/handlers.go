@@ -108,7 +108,7 @@ func (n *node) HandleRumorsMessage(
 			)
 			err := n.HandlePkt(pkt)
 			if err != nil {
-				log.Warn().Err(err).Msg("packing the rumor message")
+				log.Warn().Err(err).Msg("handling the rumor message")
 			}
 			isNew = true
 		}
@@ -155,7 +155,7 @@ func (n *node) HandleAckMessage(msg types.Message, pkt transport.Packet) error {
 	log.Debug().Str("by", addr).Msg("handle ack message")
 
 	// signal that an ack was received
-	n.asyncNotifier.Notify(pkt.Header.PacketID, pkt.Header.Source)
+	n.asyncNotifier.Notify(ack.AckedPacketID, pkt.Header.Source)
 
 	statusPkt, err := n.TypeMessageToPacket(
 		ack.Status,
@@ -256,7 +256,11 @@ func (n *node) HandlePrivateMessage(
 
 	addr := n.GetAddress()
 	_, ok := priv.Recipients[addr]
-	log.Info().Str("by", addr).Bool("recipient", ok).Msg("handle private message")
+	log.Debug().
+		Str("by", addr).
+		Str("from", pkt.Header.Source).
+		Bool("recipient", ok).
+		Msg("handle private message")
 
 	if ok {
 		pkt := n.TransportMessageToPacket(

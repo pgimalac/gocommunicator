@@ -46,7 +46,11 @@ func (n *node) Unicast(dest string, msg transport.Message) error {
 // Broadcast implements peer.Messaging
 func (n *node) Broadcast(msg transport.Message) error {
 	addr := n.GetAddress()
-	log.Debug().Str("type", msg.Type).Str("by", n.GetAddress()).Msg("broadcast")
+	log.Debug().
+		Str("payload", string(msg.Payload)).
+		Str("type", msg.Type).
+		Str("by", n.GetAddress()).
+		Msg("broadcast")
 
 	n.sync.Lock()
 	n.rumorNum += 1
@@ -59,9 +63,6 @@ func (n *node) Broadcast(msg transport.Message) error {
 			},
 		},
 	}
-	n.sync.Unlock()
-
-	go n.sendRumorsMessage(rm)
 
 	pkt, err := n.TypeMessageToPacket(rm, addr, addr, addr, 0)
 	if err != nil {
@@ -69,12 +70,21 @@ func (n *node) Broadcast(msg transport.Message) error {
 		return err
 	}
 
+	msgpkt := n.TransportMessageToPacket(msg, addr, addr, addr, 0)
+
+	// a little trick to avoid issues in case of message reordering
+	n.status.ProcessRumor(rm.Rumors[0])
+	n.sync.Unlock()
+
 	// use HandlePkt instead of Registry.ProcessesPacket to have the packet
 	// logged as any other handled packet
 	err = n.HandlePkt(pkt)
 	if err != nil {
 		return err
 	}
+
+	n.HandlePkt(msgpkt)
+	go n.sendRumorsMessage(rm)
 
 	return nil
 }
@@ -87,12 +97,12 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 	nb := len(neighbors)
 
 	n.sync.Lock()
-	if n.rt == nil {
-		n.sync.Unlock()
+	rt := n.rt
+	n.sync.Unlock()
+	if rt == nil {
 		return
 	}
-	done := n.rt.context.Done()
-	n.sync.Unlock()
+	done := rt.context.Done()
 
 	// If there is a timeout, use a real time.Timer
 	// Otherwise, create a channel that will never be used
@@ -155,7 +165,10 @@ func (n *node) sendRumorsMessage(msg types.RumorsMessage) {
 				Msg("ack timeout")
 		case from := <-recvack:
 			// ack received !
-			log.Debug().Str("by", addr).Str("from", from.(string)).Msg("ack received")
+			log.Debug().
+				Str("by", addr).
+				Str("from", from.(string)).
+				Msg("ack received")
 			return
 		case <-done:
 			return

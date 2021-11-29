@@ -1503,6 +1503,7 @@ func Test_HW3_Tag_Paxos_Consensus_Stress_Test(t *testing.T) {
 				require.NoError(t, err)
 
 				time.Sleep(time.Duration(rand.Int63n(int64(time.Second))))
+				println(n.GetAddr(), "wake up")
 			}
 		}(node)
 	}
