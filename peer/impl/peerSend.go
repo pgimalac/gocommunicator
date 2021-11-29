@@ -64,6 +64,8 @@ func (n *node) Broadcast(msg transport.Message) error {
 		},
 	}
 
+	go n.sendRumorsMessage(rm)
+
 	pkt, err := n.TypeMessageToPacket(rm, addr, addr, addr, 0)
 	if err != nil {
 		log.Warn().Str("by", addr).Err(err).Msg("packing the rumors message")
@@ -78,13 +80,11 @@ func (n *node) Broadcast(msg transport.Message) error {
 
 	// use HandlePkt instead of Registry.ProcessesPacket to have the packet
 	// logged as any other handled packet
+	n.HandlePkt(msgpkt)
 	err = n.HandlePkt(pkt)
 	if err != nil {
 		return err
 	}
-
-	n.HandlePkt(msgpkt)
-	go n.sendRumorsMessage(rm)
 
 	return nil
 }
