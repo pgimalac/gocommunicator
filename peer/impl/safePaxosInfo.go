@@ -13,15 +13,19 @@ import (
 )
 
 type SafePaxosInfo struct {
-	clock         uint
-	maxID         uint
-	acceptedID    uint
-	acceptedValue *types.PaxosValue
+	clock uint
+	maxID uint
 
 	initID    uint
 	nextID    uint
 	nbPeers   uint
 	threshold uint
+
+	acceptedID    uint
+	acceptedValue *types.PaxosValue
+
+	currentID uint
+	myValue   *types.PaxosValue
 
 	phase uint
 
@@ -34,10 +38,8 @@ type SafePaxosInfo struct {
 	chanAcc chan types.PaxosAcceptMessage
 	chanTLC chan types.BlockchainBlock
 
-	lock      sync.Mutex
-	runlock   sync.Mutex
-	currentID uint
-	myValue   *types.PaxosValue
+	lock    sync.Mutex
+	runlock sync.Mutex
 }
 
 func NewSafePaxosInfo(nextID, nbPeers, threshold uint) SafePaxosInfo {
@@ -132,7 +134,6 @@ func (pi *SafePaxosInfo) HandleAccept(n *node, source string, acc *types.PaxosAc
 	pi.acceptedID = acc.ID
 
 	pi.phase = 3
-	println("go to phase", pi.phase, n.GetAddress())
 	block := n.computeBlock(*acc)
 	tlc := types.TLCMessage{
 		Step:  pi.clock,
@@ -176,12 +177,11 @@ func (pi *SafePaxosInfo) HandlePromise(source string, prom *types.PaxosPromiseMe
 	}
 
 	if pi.acceptedValue != nil {
-		prop.ID = pi.acceptedID
+		prop.ID = prom.ID
 		prop.Value = *pi.acceptedValue
 	}
 
 	pi.phase = 2
-	println("go to phase", pi.phase)
 
 	return prop, true
 }
@@ -222,7 +222,6 @@ func (pi *SafePaxosInfo) HandleTLC(n *node, source string, tlc *types.TLCMessage
 		n.conf.Storage.GetBlockchainStore().Set(hex.EncodeToString(block.Hash), blockbytes)
 		n.conf.Storage.GetBlockchainStore().Set(storage.LastBlockKey, block.Hash)
 		n.conf.Storage.GetNamingStore().Set(block.Value.Filename, []byte(block.Value.Metahash))
-		println(n.GetAddress(), "add block to blockchain", block.Value.Filename, "step", block.Index)
 
 		pi.tick()
 
@@ -243,14 +242,12 @@ func broadcastMsg(n *node, msg types.Message) error {
 }
 
 // broadcasts a new prepare message
-func (pi *SafePaxosInfo) broadcastPrepare(n *node, id uint) error {
-	pi.lock.Lock()
+func (*SafePaxosInfo) broadcastPrepare(n *node, clk uint, id uint) error {
 	prep := types.PaxosPrepareMessage{
-		Step:   pi.clock,
+		Step:   clk,
 		ID:     id,
 		Source: n.GetAddress(),
 	}
-	pi.lock.Unlock()
 
 	return broadcastMsg(n, prep)
 }
@@ -273,7 +270,6 @@ func (pi *SafePaxosInfo) tick() {
 
 	pi.nextID = pi.initID
 	pi.phase = 0
-	println("go to phase", pi.phase, "step=", pi.clock)
 
 	pi.promises = map[uint]map[string]struct{}{}
 	pi.accepted = map[string]map[string]struct{}{}
@@ -305,8 +301,7 @@ func (pi *SafePaxosInfo) Start(n *node, name, mh string) error {
 
 	if pi.phase != 3 {
 		pi.phase = 1
-		println("go to phase", pi.phase, n.GetAddress())
-		go pi.broadcastPrepare(n, pi.currentID)
+		go pi.broadcastPrepare(n, pi.clock, pi.currentID)
 	}
 	pi.lock.Unlock()
 
@@ -321,14 +316,13 @@ func (pi *SafePaxosInfo) Start(n *node, name, mh string) error {
 			pi.lock.Lock()
 			if pi.phase == 2 {
 				pi.phase = 1
-				println("go to phase", pi.phase, n.GetAddress())
 			}
 
 			if pi.phase == 1 {
 				pi.currentID = pi.nextID
 				pi.nextID += pi.nbPeers
 				pi.promises[pi.currentID] = map[string]struct{}{}
-				go pi.broadcastPrepare(n, pi.currentID)
+				go pi.broadcastPrepare(n, pi.clock, pi.currentID)
 			}
 			pi.lock.Unlock()
 		case <-done:

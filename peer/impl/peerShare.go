@@ -261,7 +261,6 @@ func (n *node) Tag(name string, mh string) error {
 	for {
 		val := n.conf.Storage.GetNamingStore().Get(name)
 		if string(val) == mh {
-			println(n.GetAddress(), "successfully tagged !")
 			return nil
 		}
 
@@ -269,7 +268,6 @@ func (n *node) Tag(name string, mh string) error {
 			return fmt.Errorf("tag: %s already exists in the naming store", name)
 		}
 
-		println(n.GetAddress(), "try to tag")
 		err := n.paxosinfo.Start(n, name, mh)
 		if err != nil {
 			if context.Err() != nil { // the peer is stopped
